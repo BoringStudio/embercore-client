@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 use embercore_client_lib::config::Config;
 
 #[tokio::main]

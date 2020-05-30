@@ -17,8 +17,15 @@ bincode = { git = "https://github.com/servo/bincode.git" }
 chrono = { version = "0.4.11", features = ["serde"] }
 config = { version = "0.9", features = ["yaml"] }
 clap = { version = "2.33" }
+env_logger = "0.7"
 futures = { version = "0.3" }
+gltf = { version = "0.15", features = ["utils"] }
+vulkano = "0.18"
+vulkano-shaders = "0.18"
+vulkano-win = "0.18"
 log = { version = "0.4", features = ["std", "serde"] }
+nalgebra = "0.20"
+nalgebra-glm = "0.7"
 rust_decimal = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -26,5 +33,10 @@ snafu = "*"
 tokio = { version = "0.2", features = ["full"] }
 tokio-serde = { version = "0.6", features = ["bincode"] }
 tokio-util = { version = "0.3", features = ["codec"] }
-env_logger = "0.7"
+image = "0.23"
+itertools = "0.9"
 uuid = { version = "0.8", features = ["v4", "serde"] }
+winit = "0.22"
+
+[profile.release]
+lto = true

@@ -1,4 +1,7 @@
+extern crate nalgebra_glm as glm;
+
 pub mod config;
+mod rendering;
 
 use futures::SinkExt;
 use tokio::net::TcpStream;
@@ -14,10 +17,8 @@ pub async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
 
     let length_delimited = FramedWrite::new(socket, LengthDelimitedCodec::new());
 
-    let mut serialized = tokio_serde::SymmetricallyFramed::new(
-        length_delimited,
-        SymmetricalBincode::<protocol::Message>::default(),
-    );
+    let mut serialized =
+        tokio_serde::SymmetricallyFramed::new(length_delimited, SymmetricalBincode::<protocol::Message>::default());
 
     serialized
         .send(protocol::Message {
