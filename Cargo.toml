@@ -21,9 +21,9 @@ clap = { version = "2.33" }
 env_logger = "0.7"
 futures = { version = "0.3" }
 gltf = { version = "0.15", features = ["utils"] }
-vulkano = "0.18"
-vulkano-shaders = "0.18"
-vulkano-win = "0.18"
+vulkano = "0.19"
+vulkano-shaders = "0.19"
+vulkano-win = "0.19"
 log = { version = "0.4", features = ["std", "serde"] }
 nalgebra = "0.20"
 nalgebra-glm = "0.7"

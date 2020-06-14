@@ -43,28 +43,29 @@ impl ComposingSystem {
     }
 
     pub fn draw(&self, dynamic_state: &DynamicState) -> AutoCommandBuffer {
-        AutoCommandBufferBuilder::secondary_graphics(
+        let mut command_buffer = AutoCommandBufferBuilder::secondary_graphics(
             self.queue.device().clone(),
             self.queue.family(),
             self.pipeline.clone().subpass(),
         )
-        .unwrap()
-        .draw(
-            self.pipeline.clone(),
-            dynamic_state,
-            vec![self.vertex_buffer.clone()],
-            self.descriptor_set.clone(),
-            (),
-        )
-        .unwrap()
-        .build()
-        .unwrap()
+        .unwrap();
+
+        command_buffer
+            .draw(
+                self.pipeline.clone(),
+                dynamic_state,
+                vec![self.vertex_buffer.clone()],
+                self.descriptor_set.clone(),
+                (),
+            )
+            .unwrap();
+
+        command_buffer.build().unwrap()
     }
 }
 
 pub struct ComposingSystemInput {
     pub diffuse: Arc<AttachmentImage>,
-    pub light: Arc<AttachmentImage>,
     pub depth: Arc<AttachmentImage>,
 }
 
@@ -77,10 +78,6 @@ impl IntoDescriptorSet for ComposingSystemInput {
         Arc::new(
             PersistentDescriptorSet::start(layout.clone())
                 .add_image(self.diffuse)
-                .unwrap()
-                .add_image(self.light)
-                .unwrap()
-                .add_image(self.depth)
                 .unwrap()
                 .build()
                 .unwrap(),
