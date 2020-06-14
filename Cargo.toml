@@ -14,6 +14,7 @@ git = "https://github.com/BoringStudio/libembercore.git"
 [dependencies]
 async-trait = "0.1"
 bincode = { git = "https://github.com/servo/bincode.git" }
+bit-set = "0.5"
 chrono = { version = "0.4.11", features = ["serde"] }
 config = { version = "0.9", features = ["yaml"] }
 clap = { version = "2.33" }
