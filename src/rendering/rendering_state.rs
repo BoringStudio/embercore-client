@@ -1,6 +1,6 @@
 use crate::rendering::prelude::*;
 
-use super::error;
+use super::error::Error;
 use super::systems::frame_system::*;
 use super::systems::world_rendering_system::*;
 
@@ -10,10 +10,9 @@ pub struct RenderingState {
 }
 
 impl RenderingState {
-    pub fn new(instance: Arc<Instance>, surface: Arc<Surface<Window>>) -> Result<Self, error::Error> {
+    pub fn new(instance: Arc<Instance>, surface: Arc<Surface<Window>>) -> Result<Self> {
         let physical = PhysicalDevice::enumerate(&instance)
-            .next()
-            .context(error::NoDeviceAvailable)?;
+            .next().ok_or(Error::NoDeviceAvailable)?;
 
         let queue_family = physical
             .queue_families()
@@ -24,8 +23,8 @@ impl RenderingState {
                 _ if family.queues_count() > 0 => Some(family),
                 _ => None,
             })
-            .context(error::NoSuitableQueuesFound {
-                device: physical.name(),
+            .ok_or(Error::NoSuitableQueuesFound {
+                device: physical.name().to_owned(),
             })?;
 
         let (_, mut queues) = Device::new(
@@ -39,7 +38,7 @@ impl RenderingState {
             },
             [(queue_family, 0.5)].iter().cloned(),
         )
-        .context(error::DeviceCreation)?;
+        .map_err(Error::DeviceCreation)?;
 
         let main_queue = queues.next().unwrap(); // at least one queue exists
 

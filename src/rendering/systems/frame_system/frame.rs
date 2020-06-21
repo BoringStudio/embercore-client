@@ -80,17 +80,17 @@ impl<'s> Frame<'s> {
 
                 match future {
                     Ok(future) => {
-                        self.system.frame_future = Some(Box::new(future) as Box<_>);
+                        self.system.frame_future = Some(future.boxed());
                     }
                     Err(FlushError::OutOfDate) => {
                         self.system.invalidate_swapchain();
                         self.system.frame_future =
-                            Some(Box::new(vulkano::sync::now(self.system.queue.device().clone())) as Box<_>);
+                            Some(vulkano::sync::now(self.system.queue.device().clone()).boxed());
                     }
                     Err(e) => {
                         log::error!("Failed to flush future: {:?}", e);
                         self.system.frame_future =
-                            Some(Box::new(vulkano::sync::now(self.system.queue.device().clone())) as Box<_>);
+                            Some(vulkano::sync::now(self.system.queue.device().clone()).boxed());
                     }
                 }
 

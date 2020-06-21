@@ -30,7 +30,7 @@ pub async fn run(_config: Config) -> Result<(), Box<dyn std::error::Error>> {
         .build_vk_surface(&events_loop, instance.clone())
         .unwrap();
 
-    let mut rendering_state = RenderingState::new(instance.clone(), surface)?;
+    let mut rendering_state = RenderingState::new(instance.clone(), surface.clone())?;
 
     let mut input_state = InputState::new();
 

@@ -182,7 +182,7 @@ impl FrameSystem {
             self.should_recreate_swapchain = true;
         }
 
-        let frame_future = Some(Box::new(self.frame_future.take().unwrap().join(acquire_future)) as Box<_>);
+        let frame_future = Some(self.frame_future.take().unwrap().join(acquire_future).boxed());
 
         Some(Frame::new(self, frame_future, swapchain_image_index))
     }
