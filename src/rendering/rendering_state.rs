@@ -7,12 +7,14 @@ use super::systems::world_rendering_system::*;
 pub struct RenderingState {
     frame_system: FrameSystem,
     world_rendering_system: WorldRenderingSystem,
+    main_queue: Arc<Queue>,
 }
 
 impl RenderingState {
     pub fn new(instance: Arc<Instance>, surface: Arc<Surface<Window>>) -> Result<Self> {
         let physical = PhysicalDevice::enumerate(&instance)
-            .next().ok_or(Error::NoDeviceAvailable)?;
+            .next()
+            .ok_or(Error::NoDeviceAvailable)?;
 
         let queue_family = physical
             .queue_families()
@@ -54,6 +56,7 @@ impl RenderingState {
         Ok(Self {
             frame_system,
             world_rendering_system,
+            main_queue,
         })
     }
 
@@ -70,5 +73,10 @@ impl RenderingState {
     #[inline(always)]
     pub fn world_rendering_system(&mut self) -> &mut WorldRenderingSystem {
         &mut self.world_rendering_system
+    }
+
+    #[inline(always)]
+    pub fn main_queue(&self) -> &Arc<Queue> {
+        &self.main_queue
     }
 }

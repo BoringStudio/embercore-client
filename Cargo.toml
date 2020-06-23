@@ -21,7 +21,6 @@ config = { version = "0.9", features = ["yaml"] }
 clap = { version = "2.33" }
 env_logger = "0.7"
 futures = { version = "0.3" }
-gltf = { version = "0.15", features = ["utils"] }
 vulkano = "0.19"
 vulkano-shaders = "0.19"
 vulkano-win = "0.19"
@@ -31,6 +30,7 @@ nalgebra-glm = "0.7"
 rust_decimal = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+specs = "0.16"
 thiserror = "1.0"
 tokio = { version = "0.2", features = ["full"] }
 tokio-serde = { version = "0.6", features = ["bincode"] }
