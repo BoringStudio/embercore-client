@@ -5,9 +5,12 @@ use super::systems::frame_system::*;
 use super::systems::world_rendering_system::*;
 
 pub struct RenderingState {
+    device: Arc<Device>,
+    main_queue: Arc<Queue>,
+    resources_queue: Arc<Queue>,
+
     frame_system: FrameSystem,
     world_rendering_system: WorldRenderingSystem,
-    main_queue: Arc<Queue>,
 }
 
 impl RenderingState {
@@ -29,7 +32,7 @@ impl RenderingState {
                 device: physical.name().to_owned(),
             })?;
 
-        let (_, mut queues) = Device::new(
+        let (device, mut queues) = Device::new(
             physical,
             &Features::none(),
             &DeviceExtensions {
@@ -43,25 +46,42 @@ impl RenderingState {
         .map_err(Error::DeviceCreation)?;
 
         let main_queue = queues.next().unwrap(); // at least one queue exists
+        let resources_queue = queues.next().unwrap_or(main_queue.clone());
 
         let frame_system = FrameSystem::new(surface.clone(), main_queue.clone());
 
-        let identity_view_data_source = IdentityViewDataSource;
         let world_rendering_system = WorldRenderingSystem::new(
             main_queue.clone(),
             frame_system.deferred_subpass(),
-            &identity_view_data_source,
+            &IdentityViewDataSource,
         );
 
         Ok(Self {
+            device,
+            main_queue,
+            resources_queue,
             frame_system,
             world_rendering_system,
-            main_queue,
         })
     }
 
     pub fn handle_resize(&mut self) {
         self.frame_system.invalidate_swapchain();
+    }
+
+    #[inline(always)]
+    pub fn device(&self) -> &Arc<Device> {
+        &self.device
+    }
+
+    #[inline(always)]
+    pub fn main_queue(&self) -> &Arc<Queue> {
+        &self.main_queue
+    }
+
+    #[inline(always)]
+    pub fn resources_queue(&self) -> &Arc<Queue> {
+        &self.resources_queue
     }
 
     #[inline(always)]
@@ -73,10 +93,5 @@ impl RenderingState {
     #[inline(always)]
     pub fn world_rendering_system(&mut self) -> &mut WorldRenderingSystem {
         &mut self.world_rendering_system
-    }
-
-    #[inline(always)]
-    pub fn main_queue(&self) -> &Arc<Queue> {
-        &self.main_queue
     }
 }

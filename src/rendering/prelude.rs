@@ -16,6 +16,7 @@ pub use vulkano::pipeline::viewport::Viewport;
 pub use vulkano::pipeline::{GraphicsPipeline, GraphicsPipelineAbstract};
 pub use vulkano::swapchain::*;
 pub use vulkano::sync::{FlushError, GpuFuture, SharingMode};
+pub use vulkano::OomError;
 pub use vulkano_win::VkSurfaceBuild;
 pub use winit::dpi::LogicalSize;
 pub use winit::event::{Event, WindowEvent};

@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 use super::FrameSystem;
 use crate::rendering::prelude::*;
 
@@ -6,8 +8,8 @@ pub struct Frame<'s> {
     frame_future: Option<Box<dyn GpuFuture>>,
     swapchain_image_index: usize,
 
-    pass_index: u8,
-    command_buffer: Option<AutoCommandBufferBuilder>,
+    state: FrameState,
+    command_buffer_builder: Option<AutoCommandBufferBuilder>,
 }
 
 impl<'s> Frame<'s> {
@@ -20,57 +22,51 @@ impl<'s> Frame<'s> {
             system,
             frame_future,
             swapchain_image_index,
-            pass_index: 0,
-            command_buffer: None,
+            state: FrameState::Draw,
+            command_buffer_builder: None,
         }
     }
 
-    pub fn next_pass<'f>(&'f mut self) -> Option<Pass<'f, 's>> {
-        match {
-            let pass_index = self.pass_index;
-            self.pass_index += 1;
-            pass_index
-        } {
-            0 => {
-                let mut command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
+    pub fn next_pass<'f>(&'f mut self) -> Result<Option<Pass<'f, 's>>> {
+        match self.state.increment() {
+            FrameState::Draw => {
+                let mut command_buffer_builder = AutoCommandBufferBuilder::primary_one_time_submit(
                     self.system.queue.device().clone(),
                     self.system.queue.family(),
-                )
-                .unwrap();
-                command_buffer
-                    .begin_render_pass(
-                        self.system.framebuffers[self.swapchain_image_index].clone(),
-                        true,
-                        vec![
-                            [0.0, 0.0, 0.0, 0.0].into(),
-                            [0.0, 0.0, 0.0, 0.0].into(),
-                            (1.0, 0x00).into(),
-                        ],
-                    )
-                    .unwrap();
+                )?;
 
-                self.command_buffer = Some(command_buffer);
-                Some(Pass::Draw(DrawPass { frame: self }))
+                command_buffer_builder.begin_render_pass(
+                    self.system.framebuffers[self.swapchain_image_index].clone(),
+                    true,
+                    vec![
+                        [0.0, 0.0, 0.0, 0.0].into(),
+                        [0.0, 0.0, 0.0, 0.0].into(),
+                        (1.0, 0x00).into(),
+                    ],
+                )?;
+
+                self.command_buffer_builder = Some(command_buffer_builder);
+                Ok(Some(Pass::Draw(DrawPass { frame: self })))
             }
-            1 => {
-                let mut command_buffer = self.command_buffer.take().unwrap();
-                command_buffer.next_subpass(true).unwrap();
+            FrameState::Compose => {
+                let mut command_buffer_builder = self.command_buffer_builder.take().unwrap();
+                command_buffer_builder.next_subpass(true)?;
 
-                self.command_buffer = Some(command_buffer);
-                Some(Pass::Compose(ComposingPass { frame: self }))
+                self.command_buffer_builder = Some(command_buffer_builder);
+                Ok(Some(Pass::Compose(ComposingPass { frame: self })))
             }
-            2 => {
-                let mut command_buffer = self.command_buffer.take().unwrap();
-                command_buffer.end_render_pass().unwrap();
-
-                let command_buffer = command_buffer.build().unwrap();
+            FrameState::Submit => {
+                let command_buffer = {
+                    let mut command_buffer = self.command_buffer_builder.take().unwrap();
+                    command_buffer.end_render_pass()?;
+                    command_buffer.build()?
+                };
 
                 let future = self
                     .frame_future
                     .take()
                     .unwrap()
-                    .then_execute(self.system.queue.clone(), command_buffer)
-                    .unwrap()
+                    .then_execute(self.system.queue.clone(), command_buffer)?
                     .then_swapchain_present(
                         self.system.queue.clone(),
                         self.system.swapchain.clone(),
@@ -84,19 +80,17 @@ impl<'s> Frame<'s> {
                     }
                     Err(FlushError::OutOfDate) => {
                         self.system.invalidate_swapchain();
-                        self.system.frame_future =
-                            Some(vulkano::sync::now(self.system.queue.device().clone()).boxed());
+                        self.system.frame_future = Some(vulkano::sync::now(self.system.queue.device().clone()).boxed());
                     }
                     Err(e) => {
                         log::error!("Failed to flush future: {:?}", e);
-                        self.system.frame_future =
-                            Some(vulkano::sync::now(self.system.queue.device().clone()).boxed());
+                        self.system.frame_future = Some(vulkano::sync::now(self.system.queue.device().clone()).boxed());
                     }
                 }
 
-                None
+                Ok(None)
             }
-            _ => None,
+            _ => Ok(None),
         }
     }
 
@@ -105,13 +99,34 @@ impl<'s> Frame<'s> {
     where
         C: CommandBuffer + Send + Sync + 'static,
     {
-        let mut command_buffer = self.command_buffer.take().unwrap();
+        let mut command_buffer = self.command_buffer_builder.take().unwrap();
 
         unsafe {
             command_buffer.execute_commands(secondary_command_buffer).unwrap();
         }
 
-        self.command_buffer = Some(command_buffer);
+        self.command_buffer_builder = Some(command_buffer);
+    }
+}
+
+#[derive(Copy, Clone)]
+enum FrameState {
+    Draw,
+    Compose,
+    Submit,
+    End,
+}
+
+impl FrameState {
+    fn increment(&mut self) -> Self {
+        std::mem::replace(
+            self,
+            match self {
+                FrameState::Draw => FrameState::Compose,
+                FrameState::Compose => FrameState::Submit,
+                _ => FrameState::End,
+            },
+        )
     }
 }
 

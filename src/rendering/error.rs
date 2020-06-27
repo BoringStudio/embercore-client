@@ -1,4 +1,6 @@
+use vulkano::command_buffer::*;
 use vulkano::device::DeviceCreationError;
+use vulkano::OomError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -9,5 +11,5 @@ pub enum Error {
     NoSuitableQueuesFound { device: String },
 
     #[error("Unable to create device: {0}")]
-    DeviceCreation(#[from] DeviceCreationError ),
+    DeviceCreation(#[from] DeviceCreationError),
 }
