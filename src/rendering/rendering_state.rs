@@ -1,16 +1,13 @@
 use crate::rendering::prelude::*;
 
 use super::error::Error;
-use super::systems::frame_system::*;
-use super::systems::world_rendering_system::*;
+use super::systems::frame_subsystem::*;
 
 pub struct RenderingState {
-    device: Arc<Device>,
     main_queue: Arc<Queue>,
     resources_queue: Arc<Queue>,
 
-    frame_system: FrameSystem,
-    world_rendering_system: WorldRenderingSystem,
+    frame_system: FrameSubsystem,
 }
 
 impl RenderingState {
@@ -32,7 +29,7 @@ impl RenderingState {
                 device: physical.name().to_owned(),
             })?;
 
-        let (device, mut queues) = Device::new(
+        let (_device, mut queues) = Device::new(
             physical,
             &Features::none(),
             &DeviceExtensions {
@@ -46,22 +43,14 @@ impl RenderingState {
         .map_err(Error::DeviceCreation)?;
 
         let main_queue = queues.next().unwrap(); // at least one queue exists
-        let resources_queue = queues.next().unwrap_or(main_queue.clone());
+        let resources_queue = queues.next().unwrap_or_else(|| main_queue.clone());
 
-        let frame_system = FrameSystem::new(surface.clone(), main_queue.clone());
-
-        let world_rendering_system = WorldRenderingSystem::new(
-            main_queue.clone(),
-            frame_system.deferred_subpass(),
-            &IdentityViewDataSource,
-        );
+        let frame_system = FrameSubsystem::new(surface.clone(), main_queue.clone());
 
         Ok(Self {
-            device,
             main_queue,
             resources_queue,
             frame_system,
-            world_rendering_system,
         })
     }
 
@@ -69,29 +58,23 @@ impl RenderingState {
         self.frame_system.invalidate_swapchain();
     }
 
-    #[inline(always)]
-    pub fn device(&self) -> &Arc<Device> {
-        &self.device
-    }
-
-    #[inline(always)]
+    #[inline]
     pub fn main_queue(&self) -> &Arc<Queue> {
         &self.main_queue
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn resources_queue(&self) -> &Arc<Queue> {
         &self.resources_queue
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn frame(&mut self) -> Option<Frame> {
         self.frame_system.frame()
     }
 
-    #[allow(dead_code)]
-    #[inline(always)]
-    pub fn world_rendering_system(&mut self) -> &mut WorldRenderingSystem {
-        &mut self.world_rendering_system
+    #[inline]
+    pub fn frame_system(&mut self) -> &mut FrameSubsystem {
+        &mut self.frame_system
     }
 }

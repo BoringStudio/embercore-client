@@ -1,5 +1,6 @@
 use super::vertex_shader;
 use crate::rendering::prelude::*;
+use crate::rendering::utils::UniformDescriptorSetFactory;
 
 pub trait ViewDataSource {
     fn view(&self) -> glm::Mat4;
@@ -18,15 +19,7 @@ impl ViewDataSource for IdentityViewDataSource {
     }
 }
 
-pub trait ViewDescriptorSetFactory {
-    fn create_descriptor_set(
-        &self,
-        pipeline: &(dyn GraphicsPipelineAbstract + Send + Sync),
-        uniform_buffer_pool: &mut CpuBufferPool<vertex_shader::ty::WorldData>,
-    ) -> Arc<dyn DescriptorSet + Send + Sync>;
-}
-
-impl<T> ViewDescriptorSetFactory for T
+impl<T> UniformDescriptorSetFactory<vertex_shader::ty::WorldData> for T
 where
     T: ViewDataSource,
 {

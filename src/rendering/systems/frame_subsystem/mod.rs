@@ -2,11 +2,11 @@ mod frame;
 
 pub use self::frame::*;
 
-use super::composing_system::*;
+use super::composing_subsystem::*;
 use crate::rendering::prelude::*;
 use crate::rendering::screen_quad::ScreenQuad;
 
-pub struct FrameSystem {
+pub struct FrameSubsystem {
     surface: Arc<Surface<Window>>,
     queue: Arc<Queue>,
 
@@ -19,10 +19,10 @@ pub struct FrameSystem {
     should_recreate_swapchain: bool,
     frame_future: Option<Box<dyn GpuFuture>>,
 
-    composing_system: ComposingSystem,
+    composing_system: ComposingSubsystem,
 }
 
-impl FrameSystem {
+impl FrameSubsystem {
     pub fn new(surface: Arc<Surface<Window>>, queue: Arc<Queue>) -> Self {
         let dimensions = surface.window().inner_size().into();
 
@@ -109,7 +109,7 @@ impl FrameSystem {
         let screen_quad = ScreenQuad::new(queue.clone());
 
         let composing_subpass = Subpass::from(render_pass.clone(), 1).unwrap();
-        let composing_system = ComposingSystem::new(
+        let composing_system = ComposingSubsystem::new(
             queue.clone(),
             composing_subpass,
             &screen_quad,
@@ -208,7 +208,7 @@ impl FrameSystem {
             .map(move |image| {
                 Arc::new(
                     Framebuffer::start(render_pass.clone())
-                        .add(image.clone())
+                        .add(image)
                         .unwrap()
                         .add(attachments.diffuse.clone())
                         .unwrap()

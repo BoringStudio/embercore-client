@@ -6,28 +6,25 @@ mod input;
 mod rendering;
 mod resources;
 
-use std::sync::Arc;
-
 use anyhow::Result;
-use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
-use vulkano::command_buffer::{AutoCommandBufferBuilder, CommandBuffer};
+use png::ColorType;
 use vulkano::format::Format;
-use vulkano::image::{Dimensions, ImageLayout, ImageUsage, ImmutableImage, MipmapsCount, SwapchainImage};
+use vulkano::image::{Dimensions, ImmutableImage};
 use vulkano::instance::Instance;
-use vulkano::sync::{Fence, GpuFuture};
+use vulkano::sync::GpuFuture;
 use vulkano_win::VkSurfaceBuild;
 use winit::dpi::LogicalSize;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
-use embercore::tme;
-
 use crate::config::Config;
 use crate::input::InputState;
-use crate::rendering::frame_system::Pass;
+use crate::rendering::frame_subsystem::Pass;
+use crate::rendering::world_rendering_subsystem::{
+    IdentityViewDataSource, MeshState, TileMesh, WorldRenderingSubsystem,
+};
 use crate::rendering::RenderingState;
-use vulkano::command_buffer::submit::SubmitCommandBufferBuilder;
 
 pub async fn run(_config: Config) -> Result<()> {
     let instance = {
@@ -44,45 +41,56 @@ pub async fn run(_config: Config) -> Result<()> {
         .unwrap();
 
     //
-    let mut rendering_state = RenderingState::new(instance.clone(), surface.clone())?;
+    let mut rendering_state = RenderingState::new(instance, surface)?;
+
+    let mut world_rendering_system = WorldRenderingSubsystem::new(
+        rendering_state.main_queue().clone(),
+        rendering_state.frame_system().deferred_subpass(),
+        &IdentityViewDataSource,
+    )?;
+
+    let (sender, receiver) = std::sync::mpsc::channel();
 
     //
-    let fence = Arc::new(Fence::from_pool(rendering_state.device().clone().clone())?);
-    let resources_queue = rendering_state.resources_queue();
-
     std::thread::spawn({
-        let fence = fence.clone();
-        let resources_queue = resources_queue.clone();
+        let resources_queue = rendering_state.resources_queue().clone();
+
         move || {
             let tileset = resources::load_tileset("./content/tileset.json").unwrap();
             let tileset_source = tileset.image.expect("Tileset image not specified");
 
-            let tileset_image = resources::load_texture("./content", &tileset_source).unwrap();
-
-            println!("Started submitting");
+            let (info, data) = resources::load_texture("./content", &tileset_source).unwrap();
 
             let (texture, texture_future) = {
                 let dimensions = Dimensions::Dim2d {
-                    width: tileset_image.width(),
-                    height: tileset_image.height(),
+                    width: info.width,
+                    height: info.height,
                 };
 
-                ImmutableImage::from_iter(
-                    tileset_image.iter().cloned(),
-                    dimensions,
-                    Format::R8G8B8A8Srgb,
-                    resources_queue.clone(),
-                )
-                .expect("Unable to load tileset image")
+                let format = match info.color_type {
+                    ColorType::RGB => Format::R8G8B8Srgb,
+                    ColorType::RGBA => Format::R8G8B8A8Srgb,
+                    _ => unreachable!(), // are not supported by `resources::load_texture`
+                };
+
+                ImmutableImage::from_iter(data.iter().cloned(), dimensions, format, resources_queue.clone())
+                    .expect("Unable to load tileset image")
             };
 
-            unsafe {
-                let mut builder = SubmitCommandBufferBuilder::new();
-                builder.set_fence_signal(&fence);
-                builder.submit(resources_queue.as_ref()).unwrap();
-            }
+            texture_future
+                .then_signal_fence_and_flush()
+                .unwrap()
+                .wait(None)
+                .unwrap();
+
+            let _ = sender.send(texture);
         }
     });
+
+    let tile_mesh = TileMesh::new(rendering_state.main_queue().clone())?;
+    let mesh_state = MeshState {
+        transform: glm::translation(&glm::Vec3::new(0.0, 0.0, 0.0)),
+    };
 
     let mut input_state = InputState::new();
 
@@ -108,16 +116,18 @@ pub async fn run(_config: Config) -> Result<()> {
                 None => return,
             };
 
-            if fence.ready().unwrap() {
-                println!("Ready!");
-            }
-
             input_state.flush(); // TODO: maybe move into ecs?
+
+            if let Ok(image) = receiver.try_recv() {
+                world_rendering_system.update_tileset(image).unwrap();
+            }
 
             // TODO: fill frame using rendering system from ecs
             while let Some(pass) = _frame.next_pass().unwrap() {
                 match pass {
-                    Pass::Draw(_) => {}
+                    Pass::Draw(mut pass) => {
+                        pass.execute(world_rendering_system.draw(pass.dynamic_state(), &tile_mesh, &mesh_state));
+                    }
                     Pass::Compose(mut pass) => pass.compose(),
                 }
             }

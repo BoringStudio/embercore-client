@@ -1,10 +1,10 @@
 use anyhow::Result;
 
-use super::FrameSystem;
+use super::FrameSubsystem;
 use crate::rendering::prelude::*;
 
 pub struct Frame<'s> {
-    system: &'s mut FrameSystem,
+    system: &'s mut FrameSubsystem,
     frame_future: Option<Box<dyn GpuFuture>>,
     swapchain_image_index: usize,
 
@@ -14,7 +14,7 @@ pub struct Frame<'s> {
 
 impl<'s> Frame<'s> {
     pub(super) fn new(
-        system: &'s mut FrameSystem,
+        system: &'s mut FrameSubsystem,
         frame_future: Option<Box<dyn GpuFuture>>,
         swapchain_image_index: usize,
     ) -> Self {

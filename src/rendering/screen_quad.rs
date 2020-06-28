@@ -34,27 +34,7 @@ impl ScreenQuad {
     }
 
     #[inline]
-    pub fn start_graphics_pipeline(
-        &self,
-    ) -> GraphicsPipelineBuilder<
-        SingleBufferDefinition<ScreenVertex>,
-        vulkano::pipeline::shader::GraphicsEntryPoint<
-            (),
-            vertex_shader::MainInput,
-            vertex_shader::MainOutput,
-            vertex_shader::Layout,
-        >,
-        (),
-        EmptyEntryPointDummy,
-        (),
-        EmptyEntryPointDummy,
-        (),
-        EmptyEntryPointDummy,
-        (),
-        EmptyEntryPointDummy,
-        (),
-        (),
-    > {
+    pub fn start_graphics_pipeline(&self) -> QuadGraphicsPipeline {
         GraphicsPipeline::start()
             .vertex_input_single_buffer::<ScreenVertex>()
             .vertex_shader(self.vertex_shader.main_entry_point(), ())
@@ -64,6 +44,27 @@ impl ScreenQuad {
 }
 
 pub type ScreenQuadVertexBuffer = CpuAccessibleBuffer<[ScreenVertex]>;
+
+type QuadGraphicsPipeline<'a> = GraphicsPipelineBuilder<
+    SingleBufferDefinition<ScreenVertex>,
+    vulkano::pipeline::shader::GraphicsEntryPoint<
+        'a,
+        (),
+        vertex_shader::MainInput,
+        vertex_shader::MainOutput,
+        vertex_shader::Layout,
+    >,
+    (),
+    EmptyEntryPointDummy,
+    (),
+    EmptyEntryPointDummy,
+    (),
+    EmptyEntryPointDummy,
+    (),
+    EmptyEntryPointDummy,
+    (),
+    (),
+>;
 
 #[derive(Default, Debug, Clone)]
 pub struct ScreenVertex {

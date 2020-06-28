@@ -9,6 +9,7 @@ pub struct InputState {
     mouse_position: MousePosition,
 }
 
+#[allow(dead_code)]
 impl InputState {
     pub fn new() -> Self {
         Self {
@@ -37,9 +38,9 @@ impl InputState {
                     None => return,
                 };
 
-                self.keyboard.handle_key(state, key);
+                self.keyboard.handle_key(*state, *key);
             }
-            WindowEvent::MouseInput { button, state, .. } => self.mouse.handle_key(state, button),
+            WindowEvent::MouseInput { button, state, .. } => self.mouse.handle_key(*state, *button),
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse_position.handle_movement(position);
             }
@@ -47,20 +48,17 @@ impl InputState {
         }
     }
 
-    #[allow(dead_code)]
-    #[inline(always)]
+    #[inline]
     pub fn keyboard(&self) -> &InputStateBuffers<KeyboardState> {
         &self.keyboard
     }
 
-    #[allow(dead_code)]
-    #[inline(always)]
+    #[inline]
     pub fn mouse(&self) -> &InputStateBuffers<MouseButtonsState> {
         &self.mouse
     }
 
-    #[allow(dead_code)]
-    #[inline(always)]
+    #[inline]
     pub fn mouse_position(&self) -> &MousePosition {
         &self.mouse_position
     }
@@ -77,6 +75,7 @@ where
     last_pressed_key: Option<T::Key>,
 }
 
+#[allow(dead_code)]
 impl<T> InputStateBuffers<T>
 where
     T: Clone + Default + DeviceInputState,
@@ -93,14 +92,14 @@ where
         self.last_pressed_key = None;
     }
 
-    fn handle_key(&mut self, state: &ElementState, key: &T::Key) {
+    fn handle_key(&mut self, state: ElementState, key: T::Key) {
         match state {
             ElementState::Pressed => {
                 if !self.current.is_pressed(key) {
                     self.any_pressed = true;
                 }
                 self.current.press(key);
-                self.last_pressed_key = Some(key.clone());
+                self.last_pressed_key = Some(key);
             }
             ElementState::Released => {
                 if !self.current.is_pressed(key) {
@@ -111,44 +110,37 @@ where
         }
     }
 
-    #[allow(dead_code)]
-    #[inline(always)]
+    #[inline]
     pub fn last_pressed_key(&self) -> Option<T::Key> {
-        self.last_pressed_key.clone()
+        self.last_pressed_key
     }
 
-    #[allow(dead_code)]
-    #[inline(always)]
-    pub fn is_pressed(&self, key: &T::Key) -> bool {
+    #[inline]
+    pub fn is_pressed(&self, key: T::Key) -> bool {
         self.current.is_pressed(key)
     }
 
-    #[allow(dead_code)]
-    #[inline(always)]
-    pub fn is_released(&self, key: &T::Key) -> bool {
+    #[inline]
+    pub fn is_released(&self, key: T::Key) -> bool {
         self.current.is_pressed(key)
     }
 
-    #[allow(dead_code)]
-    #[inline(always)]
-    pub fn was_pressed(&self, key: &T::Key) -> bool {
+    #[inline]
+    pub fn was_pressed(&self, key: T::Key) -> bool {
         !self.previous.is_pressed(key) && self.current.is_pressed(key)
     }
 
-    #[allow(dead_code)]
-    #[inline(always)]
-    pub fn was_released(&self, key: &T::Key) -> bool {
+    #[inline]
+    pub fn was_released(&self, key: T::Key) -> bool {
         self.previous.is_pressed(key) && !self.current.is_pressed(key)
     }
 
-    #[allow(dead_code)]
-    #[inline(always)]
+    #[inline]
     pub fn was_any_pressed(&self) -> bool {
         self.any_pressed
     }
 
-    #[allow(dead_code)]
-    #[inline(always)]
+    #[inline]
     pub fn was_any_released(&self) -> bool {
         self.any_released
     }
@@ -175,6 +167,7 @@ pub struct MousePosition {
     initialized: bool,
 }
 
+#[allow(dead_code)]
 impl MousePosition {
     pub fn new() -> Self {
         Self {
@@ -193,14 +186,12 @@ impl MousePosition {
         self.initialized = true;
     }
 
-    #[allow(dead_code)]
-    #[inline(always)]
+    #[inline]
     fn current(&self) -> &PhysicalPosition<f64> {
         &self.current
     }
 
-    #[allow(dead_code)]
-    #[inline(always)]
+    #[inline]
     fn delta(&self) -> PhysicalPosition<f64> {
         PhysicalPosition::new(self.current.x - self.previous.x, self.current.y - self.previous.y)
     }

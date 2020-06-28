@@ -1,15 +1,15 @@
 use crate::rendering::prelude::*;
 use crate::rendering::screen_quad::*;
-use crate::rendering::utils::IntoDescriptorSet;
+use crate::rendering::utils::DescriptorSetFactory;
 
-pub struct ComposingSystem {
+pub struct ComposingSubsystem {
     queue: Arc<Queue>,
     vertex_buffer: Arc<ScreenQuadVertexBuffer>,
     pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     descriptor_set: Arc<dyn DescriptorSet + Send + Sync>,
 }
 
-impl ComposingSystem {
+impl ComposingSubsystem {
     pub fn new<R>(queue: Arc<Queue>, subpass: Subpass<R>, screen_quad: &ScreenQuad, input: ComposingSystemInput) -> Self
     where
         R: RenderPassAbstract + Send + Sync + 'static,
@@ -28,7 +28,7 @@ impl ComposingSystem {
                 .unwrap(),
         );
 
-        let descriptor_set = input.into_descriptor_set(pipeline.as_ref());
+        let descriptor_set = input.create_descriptor_set(pipeline.as_ref());
 
         Self {
             queue,
@@ -39,7 +39,7 @@ impl ComposingSystem {
     }
 
     pub fn update_input(&mut self, input: ComposingSystemInput) {
-        self.descriptor_set = input.into_descriptor_set(self.pipeline.as_ref());
+        self.descriptor_set = input.create_descriptor_set(self.pipeline.as_ref());
     }
 
     pub fn draw(&self, dynamic_state: &DynamicState) -> AutoCommandBuffer {
@@ -69,8 +69,8 @@ pub struct ComposingSystemInput {
     pub depth: Arc<AttachmentImage>,
 }
 
-impl IntoDescriptorSet for ComposingSystemInput {
-    fn into_descriptor_set(
+impl DescriptorSetFactory for ComposingSystemInput {
+    fn create_descriptor_set(
         self,
         pipeline: &(dyn GraphicsPipelineAbstract + Send + Sync),
     ) -> Arc<dyn DescriptorSet + Send + Sync> {
