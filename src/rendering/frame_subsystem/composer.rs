@@ -2,20 +2,24 @@ use crate::rendering::prelude::*;
 use crate::rendering::screen_quad::*;
 use crate::rendering::utils::DescriptorSetFactory;
 
-pub struct ComposingSubsystem {
+pub struct Composer {
     queue: Arc<Queue>,
     vertex_buffer: Arc<ScreenQuadVertexBuffer>,
     pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     descriptor_set: Arc<dyn DescriptorSet + Send + Sync>,
 }
 
-impl ComposingSubsystem {
-    pub fn new<R>(queue: Arc<Queue>, subpass: Subpass<R>, screen_quad: &ScreenQuad, input: ComposingSystemInput) -> Self
+impl Composer {
+    pub fn new<R>(
+        queue: Arc<Queue>,
+        subpass: Subpass<R>,
+        screen_quad: &ScreenQuad,
+        input: ComposingSystemInput,
+    ) -> Result<Self>
     where
         R: RenderPassAbstract + Send + Sync + 'static,
     {
-        let fragment_shader =
-            fragment_shader::Shader::load(queue.device().clone()).expect("Failed to create fragment shader module");
+        let fragment_shader = fragment_shader::Shader::load(queue.device().clone())?;
 
         let vertex_buffer = screen_quad.vertex_buffer();
 
@@ -24,22 +28,22 @@ impl ComposingSubsystem {
                 .start_graphics_pipeline()
                 .fragment_shader(fragment_shader.main_entry_point(), ())
                 .render_pass(subpass)
-                .build(queue.device().clone())
-                .unwrap(),
+                .build(queue.device().clone())?,
         );
 
-        let descriptor_set = input.create_descriptor_set(pipeline.as_ref());
+        let descriptor_set = input.create_descriptor_set(pipeline.as_ref())?;
 
-        Self {
+        Ok(Self {
             queue,
             vertex_buffer,
             pipeline,
             descriptor_set,
-        }
+        })
     }
 
-    pub fn update_input(&mut self, input: ComposingSystemInput) {
-        self.descriptor_set = input.create_descriptor_set(self.pipeline.as_ref());
+    pub fn update_input(&mut self, input: ComposingSystemInput) -> Result<()> {
+        self.descriptor_set = input.create_descriptor_set(self.pipeline.as_ref())?;
+        Ok(())
     }
 
     pub fn draw(&self, dynamic_state: &DynamicState) -> AutoCommandBuffer {
@@ -73,15 +77,13 @@ impl DescriptorSetFactory for ComposingSystemInput {
     fn create_descriptor_set(
         self,
         pipeline: &(dyn GraphicsPipelineAbstract + Send + Sync),
-    ) -> Arc<dyn DescriptorSet + Send + Sync> {
+    ) -> Result<Arc<dyn DescriptorSet + Send + Sync>> {
         let layout = pipeline.descriptor_set_layout(0).unwrap();
-        Arc::new(
+        Ok(Arc::new(
             PersistentDescriptorSet::start(layout.clone())
-                .add_image(self.diffuse)
-                .unwrap()
-                .build()
-                .unwrap(),
-        )
+                .add_image(self.diffuse)?
+                .build()?,
+        ))
     }
 }
 

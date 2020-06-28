@@ -1,10 +1,13 @@
+mod composer;
 mod frame;
+
+use anyhow::Result;
 
 pub use self::frame::*;
 
-use super::composing_subsystem::*;
+use self::composer::*;
 use crate::rendering::prelude::*;
-use crate::rendering::screen_quad::ScreenQuad;
+use crate::rendering::screen_quad::*;
 
 pub struct FrameSubsystem {
     surface: Arc<Surface<Window>>,
@@ -19,23 +22,19 @@ pub struct FrameSubsystem {
     should_recreate_swapchain: bool,
     frame_future: Option<Box<dyn GpuFuture>>,
 
-    composing_system: ComposingSubsystem,
+    composing_system: Composer,
 }
 
 impl FrameSubsystem {
-    pub fn new(surface: Arc<Surface<Window>>, queue: Arc<Queue>) -> Self {
+    pub fn new(surface: Arc<Surface<Window>>, queue: Arc<Queue>) -> Result<Self> {
         let dimensions = surface.window().inner_size().into();
 
-        let format;
-
         let (swapchain, swapchain_images) = {
-            let surface_capabilities = surface
-                .capabilities(queue.device().physical_device())
-                .expect("Failed to get surface capabilities");
+            let surface_capabilities = surface.capabilities(queue.device().physical_device())?;
 
             let usage = surface_capabilities.supported_usage_flags;
             let alpha = surface_capabilities.supported_composite_alpha.iter().next().unwrap();
-            format = surface_capabilities.supported_formats[0].0;
+            let format = surface_capabilities.supported_formats[0].0;
 
             Swapchain::new(
                 queue.device().clone(),
@@ -52,8 +51,7 @@ impl FrameSubsystem {
                 FullscreenExclusive::Default,
                 true,
                 ColorSpace::SrgbNonLinear,
-            )
-            .expect("Failed to create swapchain")
+            )?
         };
 
         let attachments = Attachments::new(queue.device().clone(), dimensions);
@@ -64,7 +62,7 @@ impl FrameSubsystem {
                     final_color: {
                         load: Clear,
                         store: Store,
-                        format: format,
+                        format: swapchain.format(),
                         samples: 1,
                     },
                     diffuse: {
@@ -106,30 +104,30 @@ impl FrameSubsystem {
             &mut dynamic_state,
         );
 
-        let screen_quad = ScreenQuad::new(queue.clone());
+        let screen_quad = ScreenQuad::new(queue.clone())?;
 
         let composing_subpass = Subpass::from(render_pass.clone(), 1).unwrap();
-        let composing_system = ComposingSubsystem::new(
+        let composing_system = Composer::new(
             queue.clone(),
             composing_subpass,
             &screen_quad,
             attachments.clone().into(),
-        );
+        )?;
 
         let frame_future = Some(vulkano::sync::now(queue.device().clone()).boxed());
 
-        Self {
+        Ok(Self {
             surface,
             queue,
             swapchain,
             attachments,
             dynamic_state,
-            render_pass: render_pass as Arc<_>,
+            render_pass,
             framebuffers,
             should_recreate_swapchain: false,
             frame_future,
             composing_system,
-        }
+        })
     }
 
     #[inline]
@@ -142,15 +140,15 @@ impl FrameSubsystem {
         self.should_recreate_swapchain = true;
     }
 
-    pub fn frame(&mut self) -> Option<Frame> {
+    pub fn frame(&mut self) -> Result<Option<Frame>> {
         self.frame_future.as_mut().unwrap().cleanup_finished();
 
         if self.should_recreate_swapchain {
             let dimensions = self.surface.window().inner_size().into();
             let (swapchain, swapchain_images) = match self.swapchain.recreate_with_dimensions(dimensions) {
                 Ok(result) => result,
-                Err(SwapchainCreationError::UnsupportedDimensions) => return None,
-                Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
+                Err(SwapchainCreationError::UnsupportedDimensions) => return Ok(None),
+                Err(e) => return Err(e.into()),
             };
 
             self.swapchain = swapchain;
@@ -163,7 +161,7 @@ impl FrameSubsystem {
                 &mut self.dynamic_state,
             );
 
-            self.composing_system.update_input(self.attachments.clone().into());
+            self.composing_system.update_input(self.attachments.clone().into())?;
 
             self.should_recreate_swapchain = false;
         }
@@ -173,9 +171,9 @@ impl FrameSubsystem {
                 Ok(result) => result,
                 Err(AcquireError::OutOfDate) => {
                     self.should_recreate_swapchain = true;
-                    return None;
+                    return Ok(None);
                 }
-                Err(e) => panic!("Failed to acquire next image: {:?}", e),
+                Err(e) => return Err(e.into()),
             };
 
         if suboptimal {
@@ -184,7 +182,7 @@ impl FrameSubsystem {
 
         let frame_future = Some(self.frame_future.take().unwrap().join(acquire_future).boxed());
 
-        Some(Frame::new(self, frame_future, swapchain_image_index))
+        Ok(Some(Frame::new(self, frame_future, swapchain_image_index)))
     }
 
     #[inline]

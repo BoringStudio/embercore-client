@@ -1,7 +1,7 @@
 use crate::rendering::prelude::*;
 
 use super::error::Error;
-use super::systems::frame_subsystem::*;
+use super::frame_subsystem::*;
 
 pub struct RenderingState {
     main_queue: Arc<Queue>,
@@ -45,7 +45,7 @@ impl RenderingState {
         let main_queue = queues.next().unwrap(); // at least one queue exists
         let resources_queue = queues.next().unwrap_or_else(|| main_queue.clone());
 
-        let frame_system = FrameSubsystem::new(surface.clone(), main_queue.clone());
+        let frame_system = FrameSubsystem::new(surface.clone(), main_queue.clone())?;
 
         Ok(Self {
             main_queue,
@@ -69,7 +69,7 @@ impl RenderingState {
     }
 
     #[inline]
-    pub fn frame(&mut self) -> Option<Frame> {
+    pub fn frame(&mut self) -> Result<Option<Frame>> {
         self.frame_system.frame()
     }
 

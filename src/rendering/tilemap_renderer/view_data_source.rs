@@ -27,20 +27,18 @@ where
         &self,
         pipeline: &(dyn GraphicsPipelineAbstract + Send + Sync),
         uniform_buffer_pool: &mut CpuBufferPool<vertex_shader::ty::WorldData>,
-    ) -> Arc<dyn DescriptorSet + Send + Sync> {
+    ) -> Result<Arc<dyn DescriptorSet + Send + Sync>> {
         let uniform_data = vertex_shader::ty::WorldData {
             view: self.view().into(),
             projection: self.projection().into(),
         };
 
-        let uniform_buffer = uniform_buffer_pool.next(uniform_data).unwrap();
+        let uniform_buffer = uniform_buffer_pool.next(uniform_data)?;
         let layout = pipeline.descriptor_set_layout(0).unwrap();
-        Arc::new(
+        Ok(Arc::new(
             PersistentDescriptorSet::start(layout.clone())
-                .add_buffer(uniform_buffer)
-                .unwrap()
-                .build()
-                .unwrap(),
-        )
+                .add_buffer(uniform_buffer)?
+                .build()?,
+        ))
     }
 }

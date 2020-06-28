@@ -43,15 +43,15 @@ impl TileMesh {
                     texture_coords: [0.0, 0.0],
                 },
                 Vertex {
-                    position: [1.0, 0.0, 0.0],
+                    position: [32.0, 0.0, 0.0],
                     texture_coords: [1.0, 0.0],
                 },
                 Vertex {
-                    position: [1.0, 1.0, 0.0],
+                    position: [32.0, 32.0, 0.0],
                     texture_coords: [1.0, 1.0],
                 },
                 Vertex {
-                    position: [0.0, 1.0, 0.0],
+                    position: [0.0, 32.0, 0.0],
                     texture_coords: [0.0, 1.0],
                 },
             ]

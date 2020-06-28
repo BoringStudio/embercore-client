@@ -1,6 +1,4 @@
-use vulkano::pipeline::shader::EmptyEntryPointDummy;
-use vulkano::pipeline::vertex::SingleBufferDefinition;
-use vulkano::pipeline::GraphicsPipelineBuilder;
+use anyhow::Result;
 
 use super::prelude::*;
 
@@ -10,22 +8,20 @@ pub struct ScreenQuad {
 }
 
 impl ScreenQuad {
-    pub fn new(queue: Arc<Queue>) -> Self {
+    pub fn new(queue: Arc<Queue>) -> Result<Self> {
         let vertex_buffer = CpuAccessibleBuffer::from_iter(
             queue.device().clone(),
             BufferUsage::all(),
             false,
             ScreenVertex::quad().iter().cloned(),
-        )
-        .expect("Failed to create screen vertex buffer");
+        )?;
 
-        let vertex_shader =
-            vertex_shader::Shader::load(queue.device().clone()).expect("Failed to create screen vertex shader module");
+        let vertex_shader = vertex_shader::Shader::load(queue.device().clone())?;
 
-        Self {
+        Ok(Self {
             vertex_buffer,
             vertex_shader,
-        }
+        })
     }
 
     #[inline]

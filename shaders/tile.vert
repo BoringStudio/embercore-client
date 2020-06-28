@@ -15,7 +15,7 @@ layout(push_constant) uniform MeshData {
 layout(location = 0) out vec2 out_texture_coords;
 
 void main() {
-    out_texture_coords = texture_coords;
+    out_texture_coords = position.xy;
 
     gl_Position = world_data.projection * world_data.view * mesh_data.transform * vec4(position, 1.0);
 }

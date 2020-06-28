@@ -1,23 +1,26 @@
 mod drawable_data_source;
+mod tileset_data;
 mod view_data_source;
 
 use anyhow::Result;
 
 pub use self::drawable_data_source::*;
+pub use self::tileset_data::*;
 pub use self::view_data_source::*;
 
 use crate::rendering::prelude::*;
 use crate::rendering::utils::*;
 
-pub struct WorldRenderingSubsystem {
+pub struct TileMapRenderer {
     queue: Arc<Queue>,
     pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     world_uniform_buffer_pool: CpuBufferPool<vertex_shader::ty::WorldData>,
     world_descriptor_set: Arc<dyn DescriptorSet + Send + Sync>,
+    tileset_uniform_buffer_pool: CpuBufferPool<fragment_shader::ty::TileSetInfo>,
     tileset_descriptor_set: Arc<dyn DescriptorSet + Send + Sync>,
 }
 
-impl WorldRenderingSubsystem {
+impl TileMapRenderer {
     pub fn new<R, V>(queue: Arc<Queue>, subpass: Subpass<R>, view_data_source: &V) -> Result<Self>
     where
         R: RenderPassAbstract + Send + Sync + 'static,
@@ -42,46 +45,37 @@ impl WorldRenderingSubsystem {
 
         let mut world_uniform_buffer_pool =
             CpuBufferPool::<vertex_shader::ty::WorldData>::new(queue.device().clone(), BufferUsage::all());
+        let mut tileset_uniform_buffer_pool =
+            CpuBufferPool::<fragment_shader::ty::TileSetInfo>::new(queue.device().clone(), BufferUsage::all());
 
         let world_descriptor_set =
-            view_data_source.create_descriptor_set(pipeline.as_ref(), &mut world_uniform_buffer_pool);
+            view_data_source.create_descriptor_set(pipeline.as_ref(), &mut world_uniform_buffer_pool)?;
 
-        let layout = pipeline.descriptor_set_layout(1).unwrap();
-
-        let tileset_descriptor_set = Arc::new(
-            PersistentDescriptorSet::start(layout.clone())
-                .add_sampled_image(
-                    rgba_null_texture(queue.clone())?,
-                    pixel_sampler(queue.device().clone())?,
-                )?
-                .build()?,
-        );
+        let tileset_descriptor_set = TileSetInfo::new_empty(queue.clone())?
+            .create_descriptor_set(pipeline.as_ref(), &mut tileset_uniform_buffer_pool)?;
 
         Ok(Self {
             queue,
             pipeline,
             world_uniform_buffer_pool,
             world_descriptor_set,
+            tileset_uniform_buffer_pool,
             tileset_descriptor_set,
         })
     }
 
-    #[allow(dead_code)]
-    pub fn update_view<V>(&mut self, view_data_source: &V)
+    pub fn update_view<V>(&mut self, view_data_source: &V) -> Result<()>
     where
         V: ViewDataSource,
     {
         self.world_descriptor_set =
-            view_data_source.create_descriptor_set(self.pipeline.as_ref(), &mut self.world_uniform_buffer_pool);
+            view_data_source.create_descriptor_set(self.pipeline.as_ref(), &mut self.world_uniform_buffer_pool)?;
+        Ok(())
     }
 
-    pub fn update_tileset(&mut self, tileset: Arc<ImmutableImage<Format>>) -> Result<()> {
-        let layout = self.pipeline.descriptor_set_layout(1).unwrap();
-        self.tileset_descriptor_set = Arc::new(
-            PersistentDescriptorSet::start(layout.clone())
-                .add_sampled_image(tileset, pixel_sampler(self.queue.device().clone())?)?
-                .build()?,
-        );
+    pub fn update_tileset(&mut self, tileset: TileSetInfo) -> Result<()> {
+        self.tileset_descriptor_set =
+            tileset.create_descriptor_set(self.pipeline.as_ref(), &mut self.tileset_uniform_buffer_pool)?;
         Ok(())
     }
 
@@ -145,13 +139,13 @@ vulkano::impl_vertex!(Vertex, position, texture_coords);
 mod vertex_shader {
     vulkano_shaders::shader! {
         ty: "vertex",
-        path: "shaders/mesh.vert"
+        path: "shaders/tile.vert"
     }
 }
 
 mod fragment_shader {
     vulkano_shaders::shader! {
         ty: "fragment",
-        path: "shaders/mesh.frag"
+        path: "shaders/tile.frag"
     }
 }

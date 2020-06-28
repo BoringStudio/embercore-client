@@ -7,7 +7,7 @@ pub trait DescriptorSetFactory {
     fn create_descriptor_set(
         self,
         pipeline: &(dyn GraphicsPipelineAbstract + Send + Sync),
-    ) -> Arc<dyn DescriptorSet + Send + Sync>;
+    ) -> Result<Arc<dyn DescriptorSet + Send + Sync>>;
 }
 
 pub trait UniformDescriptorSetFactory<T> {
@@ -15,7 +15,7 @@ pub trait UniformDescriptorSetFactory<T> {
         &self,
         pipeline: &(dyn GraphicsPipelineAbstract + Send + Sync),
         uniform_buffer_pool: &mut CpuBufferPool<T>,
-    ) -> Arc<dyn DescriptorSet + Send + Sync>;
+    ) -> Result<Arc<dyn DescriptorSet + Send + Sync>>;
 }
 
 #[allow(dead_code)]
