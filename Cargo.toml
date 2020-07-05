@@ -16,14 +16,11 @@ async-trait = "0.1"
 anyhow = "1.0"
 bincode = { git = "https://github.com/servo/bincode.git" }
 bit-set = "0.5"
+bytemuck = "1"
 chrono = { version = "0.4.11", features = ["serde"] }
 config = { version = "0.9", features = ["yaml"] }
-clap = { version = "2.33" }
 env_logger = "0.7"
 futures = { version = "0.3" }
-vulkano = "0.19"
-vulkano-shaders = "0.19"
-vulkano-win = "0.19"
 log = { version = "0.4", features = ["std", "serde"] }
 nalgebra = "0.20"
 nalgebra-glm = "0.7"
@@ -39,6 +36,7 @@ tokio-serde = { version = "0.6", features = ["bincode"] }
 tokio-util = { version = "0.3", features = ["codec"] }
 itertools = "0.9"
 uuid = { version = "0.8", features = ["v4", "serde"] }
+wgpu = { git = "https://github.com/gfx-rs/wgpu-rs.git", features = ["vulkan"] }
 winit = "0.22"
 
 [profile.release]

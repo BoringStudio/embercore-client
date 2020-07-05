@@ -6,171 +6,137 @@ mod input;
 mod rendering;
 mod resources;
 
-use std::sync::Arc;
-
 use anyhow::Result;
-use png::ColorType;
-use vulkano::format::Format;
-use vulkano::image::{Dimensions, ImmutableImage};
-use vulkano::instance::Instance;
-use vulkano::swapchain::Surface;
-use vulkano::sync::GpuFuture;
-use vulkano_win::VkSurfaceBuild;
-use winit::dpi::LogicalSize;
+use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::{Window, WindowBuilder};
+use winit::window::WindowBuilder;
 
 use crate::config::Config;
 use crate::input::InputState;
 use crate::rendering::*;
 
 pub async fn run(_config: Config) -> Result<()> {
-    let instance = {
-        let extensions = vulkano_win::required_extensions();
-        Instance::new(None, &extensions, None)?
-    };
-
     let events_loop = EventLoop::new();
-    let surface = WindowBuilder::new()
+    let window = WindowBuilder::new()
         .with_min_inner_size(LogicalSize::new(800, 600))
         .with_inner_size(LogicalSize::new(1024, 768))
         .with_title("embercore")
-        .build_vk_surface(&events_loop, instance.clone())
-        .unwrap();
+        .build(&events_loop)?;
 
     //
-    let mut rendering_state = RenderingState::new(instance, surface.clone())?;
-
-    let mut camera = Camera::new(surface);
-    camera.set_view(glm::identity());
-
-    let mut tilemap_renderer = TileMapRenderer::new(
-        rendering_state.main_queue().clone(),
-        rendering_state.frame_system().deferred_subpass(),
-        &camera,
-    )?;
-
-    let (sender, receiver) = std::sync::mpsc::channel();
+    let mut rendering_state: RenderingState = futures::executor::block_on(RenderingState::new(&window))?;
 
     //
-    std::thread::spawn({
-        let resources_queue = rendering_state.resources_queue().clone();
+    let texture_view = {
+        let (texture_info, texture_data) = resources::load_texture("content", "tileset.png")?;
 
-        move || {
-            let tileset = resources::load_tileset("./content/tileset.json").unwrap();
-            let tileset_source = tileset.image.expect("Tileset image not specified");
+        let texture_extent = wgpu::Extent3d {
+            width: texture_info.width,
+            height: texture_info.height,
+            depth: 1,
+        };
 
-            let (info, data) = resources::load_texture("./content", &tileset_source).unwrap();
+        let texture = rendering_state.device().create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: texture_extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
+        });
 
-            let (texture, texture_future) = {
-                let dimensions = Dimensions::Dim2d {
-                    width: info.width,
-                    height: info.height,
-                };
+        rendering_state.queue().write_texture(
+            wgpu::TextureCopyView {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+            },
+            texture_data.as_slice(),
+            wgpu::TextureDataLayout {
+                offset: 0,
+                bytes_per_row: texture_info.color_type.samples() as u32 * texture_info.width,
+                rows_per_image: 0,
+            },
+            texture_extent,
+        );
 
-                let format = match info.color_type {
-                    ColorType::RGB => Format::R8G8B8Srgb,
-                    ColorType::RGBA => Format::R8G8B8A8Srgb,
-                    _ => unreachable!(), // are not supported by `resources::load_texture`
-                };
-
-                ImmutableImage::from_iter(data.iter().cloned(), dimensions, format, resources_queue.clone())
-                    .expect("Unable to load tileset image")
-            };
-
-            texture_future
-                .then_signal_fence_and_flush()
-                .unwrap()
-                .wait(None)
-                .unwrap();
-
-            let _ = sender.send(TileSetInfo {
-                image: texture,
-                size: [info.width as i32, info.height as i32],
-            });
-        }
-    });
-
-    let tile_mesh = TileMesh::new(rendering_state.main_queue().clone())?;
-    let mesh_state = MeshState {
-        transform: glm::translation(&glm::Vec3::new(0.0, 0.0, 0.0)),
+        texture.create_default_view()
     };
+
+    //
+
+    let mut camera = Camera::new(window.inner_size());
+    camera.set_view(&glm::identity());
 
     let mut input_state = InputState::new();
 
-    events_loop.run(move |event, _, control_flow| match event {
-        Event::WindowEvent {
-            event: WindowEvent::CloseRequested,
-            ..
-        } => {
-            *control_flow = ControlFlow::Exit;
-        }
-        Event::WindowEvent {
-            event: WindowEvent::Resized(_),
-            ..
-        } => {
-            camera.update_projection();
-            tilemap_renderer.update_view(&camera).unwrap();
-            rendering_state.handle_resize();
-        }
-        Event::WindowEvent { ref event, .. } => {
-            input_state.handle_window_event(event);
-        }
-        Event::RedrawEventsCleared => {
-            let mut _frame = match rendering_state.frame().unwrap() {
-                Some(frame) => frame,
-                None => return,
-            };
-
-            input_state.flush(); // TODO: maybe move into ecs?
-
-            if let Ok(image) = receiver.try_recv() {
-                tilemap_renderer.update_tileset(image).unwrap();
+    events_loop.run(move |event, _, control_flow| {
+        match event {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => {
+                *control_flow = ControlFlow::Exit;
             }
+            Event::WindowEvent {
+                event: WindowEvent::Resized(size),
+                ..
+            } => {
+                camera.update_projection(size);
+                rendering_state.handle_resize(size);
+            }
+            Event::WindowEvent { ref event, .. } => {
+                input_state.handle_window_event(event);
+            }
+            Event::RedrawEventsCleared => {
+                let (mut encoder, mut frame) = rendering_state.frame();
 
-            // TODO: fill frame using rendering system from ecs
-            while let Some(pass) = _frame.next_pass().unwrap() {
-                match pass {
-                    Pass::Draw(mut pass) => {
-                        pass.execute(tilemap_renderer.draw(pass.dynamic_state(), &tile_mesh, &mesh_state));
+                input_state.flush(); // TODO: maybe move into ecs?
+
+                while let Some(pass) = frame.next_pass() {
+                    match pass {
+                        Pass::World(cx) => {
+                            let mut pass = cx.start(&mut encoder);
+
+                            let mut tilemap_renderer = cx.tile_map_renderer().start(&mut pass);
+                            tilemap_renderer.draw_tile();
+                        }
                     }
-                    Pass::Compose(mut pass) => pass.compose(),
                 }
+
+                frame.submit(encoder);
             }
+            _ => {}
         }
-        _ => {}
-    });
+    })
 }
 
 struct Camera {
     view: glm::Mat4,
     projection: glm::Mat4,
     scale: u32,
-
-    surface: Arc<Surface<Window>>,
 }
 
 impl Camera {
-    pub fn new(surface: Arc<Surface<Window>>) -> Self {
+    pub fn new(size: PhysicalSize<u32>) -> Self {
         let mut camera = Self {
             view: glm::identity(),
             projection: glm::identity(),
-            surface,
-            scale: 4,
+            scale: 2,
         };
-        camera.update_projection();
+        camera.update_projection(size);
         camera
     }
 
     #[inline]
-    pub fn set_view(&mut self, view: glm::Mat4) {
-        self.view = view;
+    pub fn set_view(&mut self, view: &glm::Mat4) {
+        self.view.copy_from(view);
     }
 
     #[inline]
-    pub fn update_projection(&mut self) {
-        let size = self.surface.window().inner_size();
+    pub fn update_projection(&mut self, size: PhysicalSize<u32>) {
         let (width, height) = (size.width, size.height);
         let factor = 2.0 * self.scale as f32;
 
@@ -182,15 +148,5 @@ impl Camera {
             -10.0,
             10.0,
         );
-    }
-}
-
-impl ViewDataSource for Camera {
-    fn view(&self) -> glm::Mat4 {
-        self.view
-    }
-
-    fn projection(&self) -> glm::Mat4 {
-        self.projection
     }
 }

@@ -1,85 +1,57 @@
-use anyhow::Result;
 use once_cell::sync::OnceCell;
 
-use super::prelude::*;
-
-pub trait DescriptorSetFactory {
-    fn create_descriptor_set(
-        self,
-        pipeline: &(dyn GraphicsPipelineAbstract + Send + Sync),
-    ) -> Result<Arc<dyn DescriptorSet + Send + Sync>>;
-}
-
-pub trait UniformDescriptorSetFactory<T> {
-    fn create_descriptor_set(
-        &self,
-        pipeline: &(dyn GraphicsPipelineAbstract + Send + Sync),
-        uniform_buffer_pool: &mut CpuBufferPool<T>,
-    ) -> Result<Arc<dyn DescriptorSet + Send + Sync>>;
+#[allow(dead_code)]
+pub fn pixel_sampler(device: &wgpu::Device) -> &wgpu::Sampler {
+    NEAREST_SAMPLER.get_or_init(|| {
+        device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        })
+    })
 }
 
 #[allow(dead_code)]
-pub fn pixel_sampler(device: Arc<Device>) -> Result<Arc<Sampler>> {
-    if let Some(sampler) = NEAREST_SAMPLER.get() {
-        return Ok(sampler.clone());
-    }
+pub fn rgba_null_texture(device: &wgpu::Device, queue: &wgpu::Queue) -> &'static wgpu::TextureView {
+    RGBA_NULL_TEXTURE.get_or_init(|| {
+        let texture_extent = wgpu::Extent3d {
+            width: 1,
+            height: 1,
+            depth: 1,
+        };
 
-    let sampler = Sampler::new(
-        device,
-        Filter::Nearest,
-        Filter::Nearest,
-        MipmapMode::Nearest,
-        SamplerAddressMode::MirroredRepeat,
-        SamplerAddressMode::MirroredRepeat,
-        SamplerAddressMode::MirroredRepeat,
-        0.0,
-        1.0,
-        0.0,
-        0.0,
-    )?;
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: texture_extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
+        });
 
-    let _ = NEAREST_SAMPLER.set(sampler.clone());
-    Ok(sampler)
+        queue.write_texture(
+            wgpu::TextureCopyView {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+            },
+            &[255u8, 0, 255, 255],
+            wgpu::TextureDataLayout {
+                offset: 0,
+                bytes_per_row: 4,
+                rows_per_image: 0,
+            },
+            texture_extent,
+        );
+
+        texture.create_default_view()
+    })
 }
 
-#[allow(dead_code)]
-pub fn rgb_null_texture(queue: Arc<Queue>) -> Result<Arc<ImmutableImage<Format>>> {
-    if let Some(image) = RGB_NULL_TEXTURE.get() {
-        return Ok(image.clone());
-    }
-
-    let dimensions = Dimensions::Dim2d { width: 1, height: 1 };
-
-    let (image, image_fut) =
-        ImmutableImage::from_iter([255u8, 0, 255].iter().cloned(), dimensions, Format::R8G8B8Srgb, queue)?;
-
-    image_fut.then_signal_fence_and_flush()?.wait(None)?;
-
-    let _ = RGB_NULL_TEXTURE.set(image.clone());
-    Ok(image)
-}
-
-#[allow(dead_code)]
-pub fn rgba_null_texture(queue: Arc<Queue>) -> Result<Arc<ImmutableImage<Format>>> {
-    if let Some(image) = RGBA_NULL_TEXTURE.get() {
-        return Ok(image.clone());
-    }
-
-    let dimensions = Dimensions::Dim2d { width: 1, height: 1 };
-
-    let (image, image_fut) = ImmutableImage::from_iter(
-        [255u8, 0, 255, 255].iter().cloned(),
-        dimensions,
-        Format::R8G8B8A8Srgb,
-        queue,
-    )?;
-
-    image_fut.then_signal_fence_and_flush()?.wait(None)?;
-
-    let _ = RGBA_NULL_TEXTURE.set(image.clone());
-    Ok(image)
-}
-
-static NEAREST_SAMPLER: OnceCell<Arc<Sampler>> = OnceCell::new();
-static RGB_NULL_TEXTURE: OnceCell<Arc<ImmutableImage<Format>>> = OnceCell::new();
-static RGBA_NULL_TEXTURE: OnceCell<Arc<ImmutableImage<Format>>> = OnceCell::new();
+static NEAREST_SAMPLER: OnceCell<wgpu::Sampler> = OnceCell::new();
+static RGBA_NULL_TEXTURE: OnceCell<wgpu::TextureView> = OnceCell::new();

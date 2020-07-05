@@ -1,21 +1,17 @@
 #version 450
 
-layout(location = 0) in vec3 position;
-layout(location = 1) in vec2 texture_coords;
-
 layout(set = 0, binding = 0) uniform WorldData {
     mat4 view;
     mat4 projection;
-} world_data;
-
-layout(push_constant) uniform MeshData {
-    mat4 transform;
-} mesh_data;
+} u_world_data;
 
 layout(location = 0) out vec2 out_texture_coords;
 
 void main() {
+    vec4 position = vec4(gl_VertexIndex & 0x1, gl_VertexIndex >> 1, 0.0, 1.0);
+
     out_texture_coords = position.xy;
 
-    gl_Position = world_data.projection * world_data.view * mesh_data.transform * vec4(position, 1.0);
+    gl_Position = u_world_data.projection * u_world_data.view * position;
+    out_texture_coords = position.xy;
 }
