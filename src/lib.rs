@@ -6,15 +6,20 @@ mod input;
 mod rendering;
 mod resources;
 
+use std::path::Path;
+
 use anyhow::Result;
 use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
+use embercore::tme;
+
 use crate::config::Config;
 use crate::input::InputState;
 use crate::rendering::*;
+use wgpu::TextureView;
 
 pub async fn run(_config: Config) -> Result<()> {
     let events_loop = EventLoop::new();
@@ -26,51 +31,68 @@ pub async fn run(_config: Config) -> Result<()> {
 
     //
     let mut rendering_state: RenderingState = futures::executor::block_on(RenderingState::new(&window))?;
+    let device = rendering_state.device().clone();
+    let queue = rendering_state.queue().clone();
 
     //
-    let texture_view = {
-        let (texture_info, texture_data) = resources::load_texture("content", "tileset.png")?;
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
 
-        let texture_extent = wgpu::Extent3d {
-            width: texture_info.width,
-            height: texture_info.height,
-            depth: 1,
-        };
+    std::thread::spawn({
+        let device = device.clone();
+        let queue = queue.clone();
 
-        let texture = rendering_state.device().create_texture(&wgpu::TextureDescriptor {
-            label: None,
-            size: texture_extent,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
-        });
+        move || {
+            let content_dir = Path::new("content");
 
-        rendering_state.queue().write_texture(
-            wgpu::TextureCopyView {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-            },
-            texture_data.as_slice(),
-            wgpu::TextureDataLayout {
-                offset: 0,
-                bytes_per_row: texture_info.color_type.samples() as u32 * texture_info.width,
-                rows_per_image: 0,
-            },
-            texture_extent,
-        );
+            let map = match resources::load_json(&content_dir.join("tilemap.json")).unwrap() {
+                tme::Map::Orthogonal(map) => map,
+                _ => panic!("Unsupported map type"),
+            };
 
-        texture.create_default_view()
-    };
+            let (tileset_first_gid, tileset) = match map.tile_sets.first() {
+                Some(tme::TilesetContainer::TilesetRef(tileset_ref)) => {
+                    let tileset = resources::load_json::<tme::Tileset>(&content_dir.join(&tileset_ref.source)).unwrap();
+                    (
+                        tileset_ref.first_gid,
+                        load_tileset(&device, &queue, &content_dir.join(&tileset.image.unwrap())),
+                    )
+                }
+                _ => panic!("No tilesets found"),
+            };
+            let _ = tx.send(tileset.into());
+
+            let tiles = match map.layers.first() {
+                Some(tme::Layer::TileLayer(layer)) => layer.data.get_tiles(layer.compression).unwrap(),
+                _ => panic!("No tile layers found"),
+            };
+
+            let mut chunk = Vec::with_capacity(16 * 16);
+            for y in 0..16 {
+                for x in 0..16 {
+                    chunk.push((tiles[y * 16 as usize + x]) as u16);
+                }
+            }
+
+            let chunk_uniform_buffer = device.create_buffer_with_data(
+                bytemuck::cast_slice(&chunk),
+                wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            );
+
+            let _ = tx.send(ResourcesEvent::ChunkLoaded(chunk_uniform_buffer));
+        }
+    });
 
     //
 
     let mut camera = Camera::new(window.inner_size());
-    camera.set_view(&glm::identity());
+    camera.set_view(&(glm::scaling(&glm::vec3(32.0, 32.0, 1.0)) * glm::translation(&glm::vec3(-8.0, -8.0, 0.0))));
+    rendering_state
+        .tilemap_renderer()
+        .update_camera(&device, &camera.view, &camera.projection);
 
     let mut input_state = InputState::new();
+
+    let mut chunks = Vec::new();
 
     events_loop.run(move |event, _, control_flow| {
         match event {
@@ -86,11 +108,31 @@ pub async fn run(_config: Config) -> Result<()> {
             } => {
                 camera.update_projection(size);
                 rendering_state.handle_resize(size);
+                rendering_state
+                    .tilemap_renderer()
+                    .update_camera(&device, &camera.view, &camera.projection);
             }
             Event::WindowEvent { ref event, .. } => {
                 input_state.handle_window_event(event);
             }
             Event::RedrawEventsCleared => {
+                while let Ok(resources_event) = rx.try_recv() {
+                    match resources_event {
+                        ResourcesEvent::TileSetLoaded(texture_view, size) => {
+                            rendering_state
+                                .tilemap_renderer()
+                                .update_tileset(&device, &texture_view, &size);
+                        }
+                        ResourcesEvent::ChunkLoaded(buffer) => {
+                            let bind_group = rendering_state
+                                .tilemap_renderer()
+                                .create_chunk_bind_group(&device, &buffer);
+
+                            chunks.push((buffer, bind_group));
+                        }
+                    }
+                }
+
                 let (mut encoder, mut frame) = rendering_state.frame();
 
                 input_state.flush(); // TODO: maybe move into ecs?
@@ -101,7 +143,9 @@ pub async fn run(_config: Config) -> Result<()> {
                             let mut pass = cx.start(&mut encoder);
 
                             let mut tilemap_renderer = cx.tile_map_renderer().start(&mut pass);
-                            tilemap_renderer.draw_tile();
+                            for (_, chunk) in chunks.iter() {
+                                tilemap_renderer.draw_chunk(chunk);
+                            }
                         }
                     }
                 }
@@ -111,6 +155,34 @@ pub async fn run(_config: Config) -> Result<()> {
             _ => {}
         }
     })
+}
+
+fn load_tileset(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    path: &std::path::PathBuf,
+) -> (wgpu::TextureView, [u32; 2]) {
+    let (texture_info, texture_data) = resources::load_texture(path).unwrap();
+
+    let (texture, texture_extent) =
+        rendering::utils::create_rgba_texture(device, texture_info.width, texture_info.height);
+
+    queue.write_texture(
+        wgpu::TextureCopyView {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+        },
+        texture_data.as_slice(),
+        wgpu::TextureDataLayout {
+            offset: 0,
+            bytes_per_row: texture_info.color_type.samples() as u32 * texture_info.width,
+            rows_per_image: 0,
+        },
+        texture_extent,
+    );
+
+    (texture.create_default_view(), [texture_info.width, texture_info.height])
 }
 
 struct Camera {
@@ -124,7 +196,7 @@ impl Camera {
         let mut camera = Self {
             view: glm::identity(),
             projection: glm::identity(),
-            scale: 2,
+            scale: 1,
         };
         camera.update_projection(size);
         camera
@@ -148,5 +220,16 @@ impl Camera {
             -10.0,
             10.0,
         );
+    }
+}
+
+enum ResourcesEvent {
+    TileSetLoaded(wgpu::TextureView, [u32; 2]),
+    ChunkLoaded(wgpu::Buffer),
+}
+
+impl From<(wgpu::TextureView, [u32; 2])> for ResourcesEvent {
+    fn from((texture_view, size): (TextureView, [u32; 2])) -> Self {
+        ResourcesEvent::TileSetLoaded(texture_view, size)
     }
 }

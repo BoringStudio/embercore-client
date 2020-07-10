@@ -2,7 +2,7 @@ mod error;
 mod frame;
 mod rendering_state;
 mod tilemap_renderer;
-mod utils;
+pub mod utils;
 
 pub use self::error::*;
 pub use self::frame::*;

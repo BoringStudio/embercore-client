@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
@@ -8,8 +10,8 @@ use crate::rendering::TileMapRenderer;
 
 pub struct RenderingState {
     surface: wgpu::Surface,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    device: Arc<wgpu::Device>,
+    queue: Arc<wgpu::Queue>,
     swap_chain_descriptor: wgpu::SwapChainDescriptor,
     swap_chain: wgpu::SwapChain,
 
@@ -24,13 +26,10 @@ impl RenderingState {
         let surface = unsafe { instance.create_surface(window) };
 
         let adapter = instance
-            .request_adapter(
-                &wgpu::RequestAdapterOptions {
-                    power_preference: wgpu::PowerPreference::Default,
-                    compatible_surface: Some(&surface),
-                },
-                wgpu::UnsafeFeatures::disallow(),
-            )
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::Default,
+                compatible_surface: Some(&surface),
+            })
             .await
             .ok_or_else(|| Error::NoSuitableAdapter)?;
 
@@ -60,8 +59,8 @@ impl RenderingState {
 
         Ok(Self {
             surface,
-            device,
-            queue,
+            device: Arc::new(device),
+            queue: Arc::new(queue),
             swap_chain_descriptor,
             swap_chain,
             tilemap_renderer,
@@ -100,12 +99,12 @@ impl RenderingState {
     }
 
     #[inline]
-    pub fn device(&self) -> &wgpu::Device {
+    pub fn device(&self) -> &Arc<wgpu::Device> {
         &self.device
     }
 
     #[inline]
-    pub fn queue(&self) -> &wgpu::Queue {
+    pub fn queue(&self) -> &Arc<wgpu::Queue> {
         &self.queue
     }
 

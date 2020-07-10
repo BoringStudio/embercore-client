@@ -1,5 +1,26 @@
 use once_cell::sync::OnceCell;
 
+pub fn create_rgba_texture(device: &wgpu::Device, width: u32, height: u32) -> (wgpu::Texture, wgpu::Extent3d) {
+    let texture_extent = wgpu::Extent3d {
+        width,
+        height,
+        depth: 1,
+    };
+
+    (
+        device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: texture_extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
+        }),
+        texture_extent,
+    )
+}
+
 #[allow(dead_code)]
 pub fn pixel_sampler(device: &wgpu::Device) -> &wgpu::Sampler {
     NEAREST_SAMPLER.get_or_init(|| {
@@ -18,21 +39,7 @@ pub fn pixel_sampler(device: &wgpu::Device) -> &wgpu::Sampler {
 #[allow(dead_code)]
 pub fn rgba_null_texture(device: &wgpu::Device, queue: &wgpu::Queue) -> &'static wgpu::TextureView {
     RGBA_NULL_TEXTURE.get_or_init(|| {
-        let texture_extent = wgpu::Extent3d {
-            width: 1,
-            height: 1,
-            depth: 1,
-        };
-
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: None,
-            size: texture_extent,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
-        });
+        let (texture, texture_extent) = create_rgba_texture(device, 1, 1);
 
         queue.write_texture(
             wgpu::TextureCopyView {
