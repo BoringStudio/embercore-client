@@ -1,10 +1,17 @@
 { "compressionlevel":-1,
+ "editorsettings":
+    {
+     "export":
+        {
+         "target":"."
+        }
+    },
  "height":16,
  "infinite":false,
  "layers":[
         {
          "compression":"zlib",
-         "data":"eJyzYWBgsBnFo3gUj0gMAIMIPAE=",
+         "data":"eJxjYmBgYKIQs+Hh45PDJo5NHp8cMWaTohef\/dTwP6WYEYrJiRd8+mGAlDgjRj8bBfqJjXdq6Ef3LyVxSE74DRQGAAzjAnE=",
          "encoding":"base64",
          "height":16,
          "id":1,

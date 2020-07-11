@@ -9,6 +9,7 @@ mod resources;
 use std::path::Path;
 
 use anyhow::Result;
+use once_cell::sync::OnceCell;
 use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -19,7 +20,6 @@ use embercore::tme;
 use crate::config::Config;
 use crate::input::InputState;
 use crate::rendering::*;
-use wgpu::TextureView;
 
 pub async fn run(_config: Config) -> Result<()> {
     let events_loop = EventLoop::new();
@@ -62,23 +62,33 @@ pub async fn run(_config: Config) -> Result<()> {
             let _ = tx.send(tileset.into());
 
             let tiles = match map.layers.first() {
-                Some(tme::Layer::TileLayer(layer)) => layer.data.get_tiles(layer.compression).unwrap(),
+                Some(tme::Layer::TileLayer(layer)) => layer.data.extract_tiles(layer.compression).unwrap(),
                 _ => panic!("No tile layers found"),
             };
 
-            let mut chunk = Vec::with_capacity(16 * 16);
-            for y in 0..16 {
-                for x in 0..16 {
-                    chunk.push((tiles[y * 16 as usize + x]) as u16);
+            let chunks_in_column = (map.height as usize + CHUNK_SIZE - 1) / CHUNK_SIZE;
+            let chunks_in_row = (map.width as usize + CHUNK_SIZE - 1) / CHUNK_SIZE;
+
+            let mut chunk = Vec::<u16>::new();
+            chunk.resize(CHUNK_SIZE * CHUNK_SIZE, 0);
+
+            for chunk_y in (0..chunks_in_column).map(|i| i * CHUNK_SIZE) {
+                for chunk_x in (0..chunks_in_row).map(|i| i * CHUNK_SIZE) {
+                    for y in 0..CHUNK_SIZE {
+                        for x in 0..CHUNK_SIZE {
+                            let tile_index = (chunk_y + y) * CHUNK_SIZE + (chunk_x + x);
+                            chunk[y * CHUNK_SIZE + x] = (tiles[tile_index] + 1 - tileset_first_gid) as u16;
+                        }
+                    }
+
+                    let chunk_uniform_buffer = device.create_buffer_with_data(
+                        bytemuck::cast_slice(&chunk),
+                        wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+                    );
+
+                    let _ = tx.send(ResourcesEvent::ChunkLoaded(chunk_uniform_buffer));
                 }
             }
-
-            let chunk_uniform_buffer = device.create_buffer_with_data(
-                bytemuck::cast_slice(&chunk),
-                wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-            );
-
-            let _ = tx.send(ResourcesEvent::ChunkLoaded(chunk_uniform_buffer));
         }
     });
 
@@ -196,7 +206,7 @@ impl Camera {
         let mut camera = Self {
             view: glm::identity(),
             projection: glm::identity(),
-            scale: 1,
+            scale: 2,
         };
         camera.update_projection(size);
         camera
@@ -212,14 +222,23 @@ impl Camera {
         let (width, height) = (size.width, size.height);
         let factor = 2.0 * self.scale as f32;
 
-        self.projection = glm::ortho(
-            -(width as f32 / factor),
-            width as f32 / factor,
-            -(height as f32 / factor),
-            height as f32 / factor,
-            -10.0,
-            10.0,
-        );
+        #[cfg_attr(rustfmt, rustfmt_skip)]
+        let correction_matrix = OPENGL_TO_WGPU_MATRIX.get_or_init(|| glm::mat4(
+            1.0, 0.0, 0.0, 0.0,
+            0.0, -1.0, 0.0, 0.0,
+            0.0, 0.0, 0.5, 0.0,
+            0.0, 0.0, 0.5, 1.0,
+        ));
+
+        self.projection = correction_matrix
+            * glm::ortho(
+                -(width as f32 / factor),
+                width as f32 / factor,
+                -(height as f32 / factor),
+                height as f32 / factor,
+                -10.0,
+                10.0,
+            );
     }
 }
 
@@ -229,7 +248,10 @@ enum ResourcesEvent {
 }
 
 impl From<(wgpu::TextureView, [u32; 2])> for ResourcesEvent {
-    fn from((texture_view, size): (TextureView, [u32; 2])) -> Self {
+    fn from((texture_view, size): (wgpu::TextureView, [u32; 2])) -> Self {
         ResourcesEvent::TileSetLoaded(texture_view, size)
     }
 }
+
+static OPENGL_TO_WGPU_MATRIX: OnceCell<glm::Mat4> = OnceCell::new();
+const CHUNK_SIZE: usize = 16;

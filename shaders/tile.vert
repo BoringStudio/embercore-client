@@ -5,7 +5,7 @@ layout(set = 0, binding = 0) uniform WorldData {
     mat4 u_projection;
 };
 layout(set = 2, binding = 0) uniform InstancesData {
-    uint u_tile_index[128];
+    uvec4 u_tile_indices[32];
 };
 
 layout(location = 0) out vec2 out_texture_coords;
@@ -18,7 +18,7 @@ void main() {
     out_texture_coords = position.xy;
 
     uint is_odd = gl_InstanceIndex & 0x1u;
-    out_tile_index = gl_InstanceIndex;
+    out_tile_index = (u_tile_indices[gl_InstanceIndex >> 3u][(gl_InstanceIndex >> 1u) & 0x3u] >> (is_odd << 4u)) & 0xffffu;
 
     gl_Position = u_projection * u_view * (offset + position);
     out_texture_coords = position.xy;
