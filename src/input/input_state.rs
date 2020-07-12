@@ -19,7 +19,7 @@ impl InputState {
         }
     }
 
-    pub fn flush(&mut self, handler: &InputStateHandler) {
+    pub fn update(&mut self, handler: &InputStateHandler) {
         self.keyboard.update(&handler.keyboard);
         self.mouse.update(&handler.mouse);
         self.mouse_position.update(&handler.mouse_position);
@@ -153,6 +153,11 @@ impl InputStateHandler {
             mouse: InputStateBuffersHandler::new(),
             mouse_position: Default::default(),
         }
+    }
+
+    pub fn flush(&mut self) {
+        self.keyboard.flush();
+        self.mouse.flush();
     }
 
     pub fn handle_window_event(&mut self, event: &WindowEvent) {

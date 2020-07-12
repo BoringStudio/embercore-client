@@ -19,8 +19,10 @@ use embercore::tme;
 
 use crate::config::Config;
 use crate::game::camera::Camera;
+use crate::game::GameState;
 use crate::input::{InputState, InputStateHandler};
 use crate::rendering::*;
+use std::sync::{Arc, Mutex};
 
 pub async fn run(_config: Config) -> Result<()> {
     let events_loop = EventLoop::new();
@@ -37,6 +39,28 @@ pub async fn run(_config: Config) -> Result<()> {
 
     //
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
+
+    let game_state = Arc::new(Mutex::new(GameState::new()));
+
+    std::thread::spawn({
+        let game_state = game_state.clone();
+
+        move || {
+            let mut now = std::time::Instant::now();
+
+            loop {
+                let then = std::time::Instant::now();
+                let dt = (then - now).as_secs_f32();
+                now = then;
+
+                {
+                    game_state.lock().unwrap().step(dt);
+                }
+
+                std::thread::sleep(std::time::Duration::from_millis(16));
+            }
+        }
+    });
 
     std::thread::spawn({
         let device = device.clone();
@@ -118,12 +142,10 @@ pub async fn run(_config: Config) -> Result<()> {
     //
 
     let mut camera = Camera::new(window.inner_size());
-    camera.set_view(glm::scaling(&glm::vec3(32.0, 32.0, 1.0)) * glm::translation(&glm::vec3(-8.0, -8.0, 0.0)));
     rendering_state
         .tilemap_renderer()
         .update_camera(&device, &camera.view(), &camera.projection());
 
-    let mut input_state = InputState::new();
     let mut input_state_handler = InputStateHandler::new();
 
     let mut chunks = Vec::new();
@@ -168,39 +190,19 @@ pub async fn run(_config: Config) -> Result<()> {
                 }
             }
 
-            let then = std::time::Instant::now();
-            let dt = (then - now).as_secs_f32();
-            now = then;
+            {
+                let mut game_state = game_state.lock().unwrap();
+                game_state.update_input_state(&input_state_handler);
 
-            if input_state.keyboard().was_pressed(VirtualKeyCode::Escape) {
-                *control_flow = ControlFlow::Exit;
-            }
-
-            let speed = 10.0;
-            let mut direction = glm::vec3(0.0, 0.0, 0.0);
-            let mut moved = false;
-            if input_state.keyboard().is_pressed(VirtualKeyCode::D) {
-                direction += glm::vec3(1.0, 0.0, 0.0);
-                moved = true;
-            } else if input_state.keyboard().is_pressed(VirtualKeyCode::A) {
-                direction += glm::vec3(-1.0, 0.0, 0.0);
-                moved = true;
-            }
-            if input_state.keyboard().is_pressed(VirtualKeyCode::W) {
-                direction += glm::vec3(0.0, -1.0, 0.0);
-                moved = true;
-            } else if input_state.keyboard().is_pressed(VirtualKeyCode::S) {
-                direction += glm::vec3(0.0, 1.0, 0.0);
-                moved = true;
-            }
-            if moved {
-                camera.set_view(camera.view() * glm::translation(&(-direction * dt * speed)));
-                rendering_state
-                    .tilemap_renderer()
-                    .update_camera(&device, &camera.view(), &camera.projection());
+                if let Some(view) = game_state.read_main_camera_view() {
+                    camera.set_view(view);
+                    rendering_state
+                        .tilemap_renderer()
+                        .update_camera(&device, &camera.view(), &camera.projection());
+                }
             }
 
-            input_state.flush(&mut input_state_handler);
+            input_state_handler.flush();
 
             let (mut encoder, mut frame) = rendering_state.frame();
 

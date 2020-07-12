@@ -34,14 +34,15 @@ impl Camera {
         let (width, height) = (size.width, size.height);
         let factor = 2.0 * self.scale as f32;
 
-        self.projection = glm::ortho(
-            -(width as f32 / factor),
-            width as f32 / factor,
-            -(height as f32 / factor),
-            height as f32 / factor,
-            -10.0,
-            10.0,
-        );
+        self.projection = glm::scaling(&glm::vec3(32.0, 32.0, 1.0))
+            * glm::ortho(
+                -(width as f32 / factor),
+                width as f32 / factor,
+                -(height as f32 / factor),
+                height as f32 / factor,
+                -10.0,
+                10.0,
+            );
         self.projection.m22 *= -1.0;
     }
 
