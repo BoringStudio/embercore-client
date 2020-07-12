@@ -1,7 +1,7 @@
 use bit_set::BitSet;
 use winit::event::{MouseButton, VirtualKeyCode};
 
-pub trait DeviceInputState {
+pub trait DeviceInputState: Default {
     type Key: Copy;
 
     fn press(&mut self, key: Self::Key);

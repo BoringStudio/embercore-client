@@ -18,7 +18,8 @@ use winit::window::WindowBuilder;
 use embercore::tme;
 
 use crate::config::Config;
-use crate::input::InputState;
+use crate::game::camera::Camera;
+use crate::input::{InputState, InputStateHandler};
 use crate::rendering::*;
 
 pub async fn run(_config: Config) -> Result<()> {
@@ -117,109 +118,108 @@ pub async fn run(_config: Config) -> Result<()> {
     //
 
     let mut camera = Camera::new(window.inner_size());
-    camera.set_view(&(glm::scaling(&glm::vec3(32.0, 32.0, 1.0)) * glm::translation(&glm::vec3(-8.0, -8.0, 0.0))));
+    camera.set_view(glm::scaling(&glm::vec3(32.0, 32.0, 1.0)) * glm::translation(&glm::vec3(-8.0, -8.0, 0.0)));
     rendering_state
         .tilemap_renderer()
-        .update_camera(&device, &camera.view, &camera.projection);
+        .update_camera(&device, &camera.view(), &camera.projection());
 
     let mut input_state = InputState::new();
+    let mut input_state_handler = InputStateHandler::new();
 
     let mut chunks = Vec::new();
 
     let mut now = std::time::Instant::now();
 
-    events_loop.run(move |event, _, control_flow| {
-        match event {
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {
+    events_loop.run(move |event, _, control_flow| match event {
+        Event::WindowEvent {
+            event: WindowEvent::CloseRequested,
+            ..
+        } => {
+            *control_flow = ControlFlow::Exit;
+        }
+        Event::WindowEvent {
+            event: WindowEvent::Resized(size),
+            ..
+        } => {
+            camera.update_projection(size);
+            rendering_state.handle_resize(size);
+            rendering_state
+                .tilemap_renderer()
+                .update_camera(&device, &camera.view(), &camera.projection());
+        }
+        Event::WindowEvent { ref event, .. } => {
+            input_state_handler.handle_window_event(event);
+        }
+        Event::RedrawEventsCleared => {
+            while let Ok(resources_event) = rx.try_recv() {
+                match resources_event {
+                    ResourcesEvent::TileSetLoaded { texture_view, size } => {
+                        rendering_state
+                            .tilemap_renderer()
+                            .update_tileset(&device, &texture_view, &size);
+                    }
+                    ResourcesEvent::ChunkLoaded { buffer, .. } => {
+                        let bind_group = rendering_state
+                            .tilemap_renderer()
+                            .create_chunk_bind_group(&device, &buffer);
+
+                        chunks.push((buffer, bind_group));
+                    }
+                }
+            }
+
+            let then = std::time::Instant::now();
+            let dt = (then - now).as_secs_f32();
+            now = then;
+
+            if input_state.keyboard().was_pressed(VirtualKeyCode::Escape) {
                 *control_flow = ControlFlow::Exit;
             }
-            Event::WindowEvent {
-                event: WindowEvent::Resized(size),
-                ..
-            } => {
-                camera.update_projection(size);
-                rendering_state.handle_resize(size);
+
+            let speed = 10.0;
+            let mut direction = glm::vec3(0.0, 0.0, 0.0);
+            let mut moved = false;
+            if input_state.keyboard().is_pressed(VirtualKeyCode::D) {
+                direction += glm::vec3(1.0, 0.0, 0.0);
+                moved = true;
+            } else if input_state.keyboard().is_pressed(VirtualKeyCode::A) {
+                direction += glm::vec3(-1.0, 0.0, 0.0);
+                moved = true;
+            }
+            if input_state.keyboard().is_pressed(VirtualKeyCode::W) {
+                direction += glm::vec3(0.0, -1.0, 0.0);
+                moved = true;
+            } else if input_state.keyboard().is_pressed(VirtualKeyCode::S) {
+                direction += glm::vec3(0.0, 1.0, 0.0);
+                moved = true;
+            }
+            if moved {
+                camera.set_view(camera.view() * glm::translation(&(-direction * dt * speed)));
                 rendering_state
                     .tilemap_renderer()
-                    .update_camera(&device, &camera.view, &camera.projection);
+                    .update_camera(&device, &camera.view(), &camera.projection());
             }
-            Event::WindowEvent { ref event, .. } => {
-                input_state.handle_window_event(event);
-            }
-            Event::RedrawEventsCleared => {
-                while let Ok(resources_event) = rx.try_recv() {
-                    match resources_event {
-                        ResourcesEvent::TileSetLoaded { texture_view, size } => {
-                            rendering_state
-                                .tilemap_renderer()
-                                .update_tileset(&device, &texture_view, &size);
-                        }
-                        ResourcesEvent::ChunkLoaded { buffer, .. } => {
-                            let bind_group = rendering_state
-                                .tilemap_renderer()
-                                .create_chunk_bind_group(&device, &buffer);
 
-                            chunks.push((buffer, bind_group));
+            input_state.flush(&mut input_state_handler);
+
+            let (mut encoder, mut frame) = rendering_state.frame();
+
+            while let Some(pass) = frame.next_pass() {
+                match pass {
+                    Pass::World(cx) => {
+                        let mut pass = cx.start(&mut encoder);
+
+                        let mut tilemap_renderer = cx.tile_map_renderer().start(&mut pass);
+                        for (_, chunk) in chunks.iter() {
+                            tilemap_renderer.draw_chunk(chunk);
                         }
                     }
                 }
-
-                let then = std::time::Instant::now();
-                let dt = (then - now).as_secs_f32();
-                now = then;
-
-                if input_state.keyboard().was_pressed(VirtualKeyCode::Escape) {
-                    *control_flow = ControlFlow::Exit;
-                }
-
-                let speed = 10.0;
-                let mut direction = glm::vec3(0.0, 0.0, 0.0);
-                let mut moved = false;
-                if input_state.keyboard().is_pressed(VirtualKeyCode::D) {
-                    direction += glm::vec3(1.0, 0.0, 0.0);
-                    moved = true;
-                } else if input_state.keyboard().is_pressed(VirtualKeyCode::A) {
-                    direction += glm::vec3(-1.0, 0.0, 0.0);
-                    moved = true;
-                }
-                if input_state.keyboard().is_pressed(VirtualKeyCode::W) {
-                    direction += glm::vec3(0.0, -1.0, 0.0);
-                    moved = true;
-                } else if input_state.keyboard().is_pressed(VirtualKeyCode::S) {
-                    direction += glm::vec3(0.0, 1.0, 0.0);
-                    moved = true;
-                }
-                if moved {
-                    camera.set_view(&(camera.view * glm::translation(&(-direction * dt * speed))));
-                    rendering_state
-                        .tilemap_renderer()
-                        .update_camera(&device, &camera.view, &camera.projection);
-                }
-
-                input_state.flush(); // TODO: maybe move into ecs?
-
-                let (mut encoder, mut frame) = rendering_state.frame();
-
-                while let Some(pass) = frame.next_pass() {
-                    match pass {
-                        Pass::World(cx) => {
-                            let mut pass = cx.start(&mut encoder);
-
-                            let mut tilemap_renderer = cx.tile_map_renderer().start(&mut pass);
-                            for (_, chunk) in chunks.iter() {
-                                tilemap_renderer.draw_chunk(chunk);
-                            }
-                        }
-                    }
-                }
-
-                frame.submit(encoder);
             }
-            _ => {}
+
+            frame.submit(encoder);
         }
+        _ => {}
     })
 }
 
@@ -251,53 +251,6 @@ fn load_tileset(
     (texture.create_default_view(), [texture_info.width, texture_info.height])
 }
 
-struct Camera {
-    view: glm::Mat4,
-    projection: glm::Mat4,
-    scale: u32,
-}
-
-impl Camera {
-    pub fn new(size: PhysicalSize<u32>) -> Self {
-        let mut camera = Self {
-            view: glm::identity(),
-            projection: glm::identity(),
-            scale: 2,
-        };
-        camera.update_projection(size);
-        camera
-    }
-
-    #[inline]
-    pub fn set_view(&mut self, view: &glm::Mat4) {
-        self.view.copy_from(view);
-    }
-
-    #[inline]
-    pub fn update_projection(&mut self, size: PhysicalSize<u32>) {
-        let (width, height) = (size.width, size.height);
-        let factor = 2.0 * self.scale as f32;
-
-        #[cfg_attr(rustfmt, rustfmt_skip)]
-        let correction_matrix = OPENGL_TO_WGPU_MATRIX.get_or_init(|| glm::mat4(
-            1.0, 0.0, 0.0, 0.0,
-            0.0, -1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ));
-
-        self.projection = correction_matrix
-            * glm::ortho(
-                -(width as f32 / factor),
-                width as f32 / factor,
-                -(height as f32 / factor),
-                height as f32 / factor,
-                -10.0,
-                10.0,
-            );
-    }
-}
-
 enum ResourcesEvent {
     TileSetLoaded {
         texture_view: wgpu::TextureView,
@@ -309,5 +262,4 @@ enum ResourcesEvent {
     },
 }
 
-static OPENGL_TO_WGPU_MATRIX: OnceCell<glm::Mat4> = OnceCell::new();
 const CHUNK_SIZE: usize = 16;
