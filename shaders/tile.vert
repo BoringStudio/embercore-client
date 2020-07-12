@@ -5,6 +5,7 @@ layout(set = 0, binding = 0) uniform WorldData {
     mat4 u_projection;
 };
 layout(set = 2, binding = 0) uniform InstancesData {
+    mat4 u_chunk_offset;
     uvec4 u_tile_indices[32];
 };
 
@@ -20,6 +21,6 @@ void main() {
     uint is_odd = gl_InstanceIndex & 0x1u;
     out_tile_index = (u_tile_indices[gl_InstanceIndex >> 3u][(gl_InstanceIndex >> 1u) & 0x3u] >> (is_odd << 4u)) & 0xffffu;
 
-    gl_Position = u_projection * u_view * (offset + position);
+    gl_Position = u_projection * u_view * u_chunk_offset * (offset + position);
     out_texture_coords = position.xy;
 }

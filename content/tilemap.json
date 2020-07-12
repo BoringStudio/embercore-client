@@ -1,33 +1,40 @@
 { "compressionlevel":-1,
- "editorsettings":
-    {
-     "export":
-        {
-         "target":"."
-        }
-    },
- "height":16,
+ "height":64,
  "infinite":false,
  "layers":[
         {
          "compression":"zlib",
-         "data":"eJxjYmBgYKIQs+Hh45PDJo5NHp8cMWaTohef\/dTwP6WYEYrJiRd8+mGAlDgjRj8bBfqJjXdq6Ef3LyVxSE74DRQGAAzjAnE=",
+         "data":"eJzt1EEWgzAIBFDt\/Q\/tvq\/VADMDRBZZ9FUDf0I8j+M4Z81qsj43K7u3TPuu\/ifzrll43ePn+NXZVrVnzFeWHVUrsk\/mPUfkvbrHvz07+xH3N8s+\/hz7SgbWeqwMWPbVvlH7eGqw7Ss1FX62yeNHz1GHHCI97OCP5vY2P9I9fl0GiLosuyKD8ftrst2KDKy1lOYMf0U7OyuUv0pmXn\/07Kv4rTmw7JX9d8\/++t3N\/zTfqhmr4Ef2Ffm2MlxKv9WO8FtroPvymDMzRvUWcSvtSH\/U3MXPdHfyI61RO\/JbY+0346yZ3xzl2SNzYMyiZz46+1f6qupX3EuWvYOfaa\/o\/+6pup\/dU2U\/sye2e\/w1\/aq5H388A2Y9z7sd\/J59vT0hMlXYkWdz9z5yDhR29Pyg\/NaMUfc02iNjb8t\/UTvijKL3a8WIvDeIflG9I1bUjzy7jAze7kdmsMMdsGSS0eusWW9fFxtaF10=",
          "encoding":"base64",
-         "height":16,
+         "height":64,
          "id":1,
          "name":"Tile Layer 1",
          "opacity":1,
          "type":"tilelayer",
          "visible":true,
-         "width":16,
+         "width":64,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "compression":"zlib",
+         "data":"eJzt18EOgkAMhGGuetP3f1g5YIwezHZb2unyfwlnujAdwrYBAAB83PbrXj1Eocd+PauHOPAudN4FYMHusrvZzsxcVp499zkzc1l5Zm+Ab92\/pd75u3dC9\/mBFVh6yNNZqn1t6SFPZ9F3Y1RzMiJidktO1J5VdsbZKQBvan2YjT70I0NkaFbWv5Sqf9n5Pe\/Vcna186rotmfR83bL3cy82e9YLVP8d69NLW\/ZovLGc2RvgSijfVLROxn3HO0Tb+\/MnGWlrlvpLBX47pMfBR1zGDlzxxx2nBmwegHH9gbB",
+         "encoding":"base64",
+         "height":64,
+         "id":2,
+         "name":"Trees",
+         "opacity":1,
+         "type":"tilelayer",
+         "visible":true,
+         "width":64,
          "x":0,
          "y":0
         }],
- "nextlayerid":2,
+ "nextlayerid":3,
  "nextobjectid":1,
  "orientation":"orthogonal",
  "renderorder":"right-down",
- "tiledversion":"1.3.5",
+ "tiledversion":"1.4.1",
  "tileheight":32,
  "tilesets":[
         {
@@ -36,6 +43,6 @@
         }],
  "tilewidth":32,
  "type":"map",
- "version":1.2,
- "width":16
+ "version":1.4,
+ "width":64
 }

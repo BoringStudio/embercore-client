@@ -24,7 +24,10 @@ void main() {
     vec2 tile_coords = vec2(in_texture_coords.x + tile_x, in_texture_coords.y + tile_y) * vec2(32, 32);
     tile_coords /= tileset_info.size;
 
-    vec3 color = texture(sampler2D(tileset_texture, tileset_sampler), tile_coords).rgb;
+    vec4 color = texture(sampler2D(tileset_texture, tileset_sampler), tile_coords).rgba;
+    if (color.a == 0) {
+        discard;
+    }
 
-    out_color = vec4(color, 1.0);
+    out_color = color;
 }

@@ -11,7 +11,7 @@ use std::path::Path;
 use anyhow::Result;
 use once_cell::sync::OnceCell;
 use winit::dpi::{LogicalSize, PhysicalSize};
-use winit::event::{Event, WindowEvent};
+use winit::event::{Event, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
@@ -49,21 +49,17 @@ pub async fn run(_config: Config) -> Result<()> {
                 _ => panic!("Unsupported map type"),
             };
 
-            let (tileset_first_gid, tileset) = match map.tile_sets.first() {
+            let tileset_first_gid = match map.tile_sets.first() {
                 Some(tme::TilesetContainer::TilesetRef(tileset_ref)) => {
                     let tileset = resources::load_json::<tme::Tileset>(&content_dir.join(&tileset_ref.source)).unwrap();
-                    (
-                        tileset_ref.first_gid,
-                        load_tileset(&device, &queue, &content_dir.join(&tileset.image.unwrap())),
-                    )
+                    let (texture_view, size) =
+                        load_tileset(&device, &queue, &content_dir.join(&tileset.image.unwrap()));
+
+                    let _ = tx.send(ResourcesEvent::TileSetLoaded { texture_view, size });
+
+                    tileset_ref.first_gid
                 }
                 _ => panic!("No tilesets found"),
-            };
-            let _ = tx.send(tileset.into());
-
-            let tiles = match map.layers.first() {
-                Some(tme::Layer::TileLayer(layer)) => layer.data.extract_tiles(layer.compression).unwrap(),
-                _ => panic!("No tile layers found"),
             };
 
             let chunks_in_column = (map.height as usize + CHUNK_SIZE - 1) / CHUNK_SIZE;
@@ -72,21 +68,47 @@ pub async fn run(_config: Config) -> Result<()> {
             let mut chunk = Vec::<u16>::new();
             chunk.resize(CHUNK_SIZE * CHUNK_SIZE, 0);
 
-            for chunk_y in (0..chunks_in_column).map(|i| i * CHUNK_SIZE) {
-                for chunk_x in (0..chunks_in_row).map(|i| i * CHUNK_SIZE) {
-                    for y in 0..CHUNK_SIZE {
-                        for x in 0..CHUNK_SIZE {
-                            let tile_index = (chunk_y + y) * CHUNK_SIZE + (chunk_x + x);
-                            chunk[y * CHUNK_SIZE + x] = (tiles[tile_index] + 1 - tileset_first_gid) as u16;
+            let slice_offset_matrix_size = std::mem::size_of::<f32>() * 4 * 4;
+            let slice_tiles_array_size = std::mem::size_of::<u16>() * chunk.len();
+
+            let mut slice_buffer = Vec::<u8>::new();
+            slice_buffer.resize(slice_offset_matrix_size + slice_tiles_array_size, 0);
+
+            for layer in map.layers.iter().filter_map(|item| {
+                if let tme::Layer::TileLayer(tile_layer) = item {
+                    Some(tile_layer)
+                } else {
+                    None
+                }
+            }) {
+                let tiles = layer.data.extract_tiles(layer.compression).unwrap();
+
+                for chunk_y in (0..chunks_in_column).map(|i| i * CHUNK_SIZE) {
+                    for chunk_x in (0..chunks_in_row).map(|i| i * CHUNK_SIZE) {
+                        let offset = glm::translation(&glm::vec3(chunk_x as f32, chunk_y as f32, 0.0));
+                        slice_buffer[..slice_offset_matrix_size]
+                            .copy_from_slice(bytemuck::cast_slice(offset.as_slice()));
+
+                        let _ = chunk.iter_mut().map(|item| *item = 0).count();
+
+                        let max_y = std::cmp::min(chunk_y + CHUNK_SIZE, map.height as usize) - chunk_y;
+                        let max_x = std::cmp::min(chunk_x + CHUNK_SIZE, map.width as usize) - chunk_x;
+
+                        for y in 0..max_y {
+                            for x in 0..max_x {
+                                let tile_index = (chunk_y + y) * map.width as usize + (chunk_x + x);
+                                chunk[y * CHUNK_SIZE + x] = (tiles[tile_index] + 1 - tileset_first_gid) as u16;
+                            }
                         }
+                        slice_buffer[slice_offset_matrix_size..].copy_from_slice(bytemuck::cast_slice(&chunk));
+
+                        let buffer = device.create_buffer_with_data(
+                            slice_buffer.as_slice(),
+                            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+                        );
+
+                        let _ = tx.send(ResourcesEvent::ChunkLoaded { offset, buffer });
                     }
-
-                    let chunk_uniform_buffer = device.create_buffer_with_data(
-                        bytemuck::cast_slice(&chunk),
-                        wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-                    );
-
-                    let _ = tx.send(ResourcesEvent::ChunkLoaded(chunk_uniform_buffer));
                 }
             }
         }
@@ -103,6 +125,8 @@ pub async fn run(_config: Config) -> Result<()> {
     let mut input_state = InputState::new();
 
     let mut chunks = Vec::new();
+
+    let mut now = std::time::Instant::now();
 
     events_loop.run(move |event, _, control_flow| {
         match event {
@@ -128,12 +152,12 @@ pub async fn run(_config: Config) -> Result<()> {
             Event::RedrawEventsCleared => {
                 while let Ok(resources_event) = rx.try_recv() {
                     match resources_event {
-                        ResourcesEvent::TileSetLoaded(texture_view, size) => {
+                        ResourcesEvent::TileSetLoaded { texture_view, size } => {
                             rendering_state
                                 .tilemap_renderer()
                                 .update_tileset(&device, &texture_view, &size);
                         }
-                        ResourcesEvent::ChunkLoaded(buffer) => {
+                        ResourcesEvent::ChunkLoaded { buffer, .. } => {
                             let bind_group = rendering_state
                                 .tilemap_renderer()
                                 .create_chunk_bind_group(&device, &buffer);
@@ -143,9 +167,41 @@ pub async fn run(_config: Config) -> Result<()> {
                     }
                 }
 
-                let (mut encoder, mut frame) = rendering_state.frame();
+                let then = std::time::Instant::now();
+                let dt = (then - now).as_secs_f32();
+                now = then;
+
+                if input_state.keyboard().was_pressed(VirtualKeyCode::Escape) {
+                    *control_flow = ControlFlow::Exit;
+                }
+
+                let speed = 10.0;
+                let mut direction = glm::vec3(0.0, 0.0, 0.0);
+                let mut moved = false;
+                if input_state.keyboard().is_pressed(VirtualKeyCode::D) {
+                    direction += glm::vec3(1.0, 0.0, 0.0);
+                    moved = true;
+                } else if input_state.keyboard().is_pressed(VirtualKeyCode::A) {
+                    direction += glm::vec3(-1.0, 0.0, 0.0);
+                    moved = true;
+                }
+                if input_state.keyboard().is_pressed(VirtualKeyCode::W) {
+                    direction += glm::vec3(0.0, -1.0, 0.0);
+                    moved = true;
+                } else if input_state.keyboard().is_pressed(VirtualKeyCode::S) {
+                    direction += glm::vec3(0.0, 1.0, 0.0);
+                    moved = true;
+                }
+                if moved {
+                    camera.set_view(&(camera.view * glm::translation(&(-direction * dt * speed))));
+                    rendering_state
+                        .tilemap_renderer()
+                        .update_camera(&device, &camera.view, &camera.projection);
+                }
 
                 input_state.flush(); // TODO: maybe move into ecs?
+
+                let (mut encoder, mut frame) = rendering_state.frame();
 
                 while let Some(pass) = frame.next_pass() {
                     match pass {
@@ -226,8 +282,8 @@ impl Camera {
         let correction_matrix = OPENGL_TO_WGPU_MATRIX.get_or_init(|| glm::mat4(
             1.0, 0.0, 0.0, 0.0,
             0.0, -1.0, 0.0, 0.0,
-            0.0, 0.0, 0.5, 0.0,
-            0.0, 0.0, 0.5, 1.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
         ));
 
         self.projection = correction_matrix
@@ -243,14 +299,14 @@ impl Camera {
 }
 
 enum ResourcesEvent {
-    TileSetLoaded(wgpu::TextureView, [u32; 2]),
-    ChunkLoaded(wgpu::Buffer),
-}
-
-impl From<(wgpu::TextureView, [u32; 2])> for ResourcesEvent {
-    fn from((texture_view, size): (wgpu::TextureView, [u32; 2])) -> Self {
-        ResourcesEvent::TileSetLoaded(texture_view, size)
-    }
+    TileSetLoaded {
+        texture_view: wgpu::TextureView,
+        size: [u32; 2],
+    },
+    ChunkLoaded {
+        offset: glm::Mat4,
+        buffer: wgpu::Buffer,
+    },
 }
 
 static OPENGL_TO_WGPU_MATRIX: OnceCell<glm::Mat4> = OnceCell::new();
