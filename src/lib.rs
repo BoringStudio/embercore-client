@@ -190,8 +190,7 @@ pub async fn run(_config: Config) -> Result<()> {
                 }
             }
 
-            {
-                let mut game_state = game_state.lock().unwrap();
+            if let Ok(mut game_state) = game_state.try_lock() {
                 game_state.update_input_state(&input_state_handler);
 
                 if let Some(view) = game_state.read_main_camera_view() {

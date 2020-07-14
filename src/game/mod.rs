@@ -24,7 +24,7 @@ impl MainCameraState {
     pub fn read_updated_view(&mut self) -> Option<glm::Mat4> {
         if self.changed {
             self.changed = false;
-            Some(glm::translation(&self.position))
+            Some(glm::translation(&-&self.position))
         } else {
             None
         }

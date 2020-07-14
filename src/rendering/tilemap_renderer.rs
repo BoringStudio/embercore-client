@@ -13,7 +13,7 @@ impl TileMapRenderer {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         let mesh_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
-            bindings: &[wgpu::BindGroupLayoutEntry::new(
+            entries: &[wgpu::BindGroupLayoutEntry::new(
                 0,
                 wgpu::ShaderStage::VERTEX,
                 wgpu::BindingType::UniformBuffer {
@@ -25,7 +25,7 @@ impl TileMapRenderer {
 
         let tileset_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
-            bindings: &[
+            entries: &[
                 wgpu::BindGroupLayoutEntry::new(
                     0,
                     wgpu::ShaderStage::FRAGMENT,
@@ -60,6 +60,7 @@ impl TileMapRenderer {
                 &tileset_bind_group_layout,
                 &mesh_bind_group_layout,
             ],
+            push_constant_ranges: &[],
         });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -129,11 +130,11 @@ impl TileMapRenderer {
     pub fn create_chunk_bind_group(&self, device: &wgpu::Device, buffer: &wgpu::Buffer) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.mesh_bind_group_layout,
-            bindings: &[wgpu::Binding {
+            label: None,
+            entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::Buffer(buffer.slice(..)),
             }],
-            label: None,
         })
     }
 
@@ -177,11 +178,11 @@ fn create_mesh_bind_group(layout: &wgpu::BindGroupLayout, device: &wgpu::Device,
 
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: &layout,
-        bindings: &[wgpu::Binding {
+        label: None,
+        entries: &[wgpu::BindGroupEntry {
             binding: 0,
             resource: wgpu::BindingResource::Buffer(chunk_uniform_buffer.slice(..)),
         }],
-        label: None,
     })
 }
 
@@ -198,16 +199,16 @@ fn create_tileset_bind_group(
 
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: &layout,
-        bindings: &[
-            wgpu::Binding {
+        entries: &[
+            wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::TextureView(texture_view),
             },
-            wgpu::Binding {
+            wgpu::BindGroupEntry {
                 binding: 1,
                 resource: wgpu::BindingResource::Sampler(utils::pixel_sampler(device)),
             },
-            wgpu::Binding {
+            wgpu::BindGroupEntry {
                 binding: 2,
                 resource: wgpu::BindingResource::Buffer(tileset_uniform_buffer.slice(..)),
             },
